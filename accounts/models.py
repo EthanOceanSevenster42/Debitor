@@ -50,6 +50,14 @@ class User(AbstractUser):
         blank=True,
         default='',
     )
+    # Per-user grant: full working access to the Lawyers page (tick steps,
+    # comment, upload) for someone whose role wouldn't otherwise allow it —
+    # e.g. an Administrator who also works the legal matters.
+    legal_access = models.BooleanField(
+        'Lawyers page access',
+        default=False,
+        help_text='Can work matters on the Lawyers page (in addition to their role).',
+    )
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []

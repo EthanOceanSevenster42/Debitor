@@ -37,6 +37,37 @@ def needs_call(days_past_due):
     return days_past_due is not None and CALL_MIN <= days_past_due < CALL_MAX
 
 
+def channel_window(start=None):
+    """The [start, end) days-past-due window in which a follow-up channel is due.
+
+    ``start`` is a per-debtor override of when the channel first becomes due
+    (None = the default CALL_MIN). The window keeps the default width
+    (CALL_MAX - CALL_MIN days), so a debtor set to be called from day 30 stays
+    promptable until day 76 rather than being cut off at the global final-demand
+    boundary."""
+    lo = CALL_MIN if start is None else max(0, int(start))
+    hi = lo + (CALL_MAX - CALL_MIN)
+    return lo, hi
+
+
+def channel_due(days_past_due, start=None):
+    """Whether a follow-up channel (call / WhatsApp / email) is due for an
+    invoice, honouring a per-debtor start-day override."""
+    if days_past_due is None:
+        return False
+    lo, hi = channel_window(start)
+    return lo <= days_past_due < hi
+
+
+def channel_missed(days_past_due, ever_actioned, start=None):
+    """Whether a channel counts as missed: one week past its due start with no
+    attempt of that channel ever logged, while still inside the window."""
+    if ever_actioned or days_past_due is None:
+        return False
+    lo, hi = channel_window(start)
+    return (lo + (MISSED_MIN - CALL_MIN)) <= days_past_due < hi
+
+
 def is_final_demand(days_past_due):
     return days_past_due is not None and 60 <= days_past_due < 65
 

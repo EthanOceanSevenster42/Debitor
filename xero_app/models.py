@@ -665,6 +665,12 @@ class HandoverSetting(models.Model):
     # so the admin isn't prompted, and the debtor isn't chased, too early. 0 = the
     # normal cadence. Set by administrators (a collections tool).
     cadence_shift_days = models.IntegerField(default=0)
+    # Per-channel follow-up start: how many days past due before this debtor is
+    # due to be called / WhatsApped / emailed. NULL = the system default
+    # (outreach.CALL_MIN). Set by administrators on the Debtors Action page.
+    call_due_days = models.IntegerField(null=True, blank=True)
+    whatsapp_due_days = models.IntegerField(null=True, blank=True)
+    email_due_days = models.IntegerField(null=True, blank=True)
     note = models.CharField(max_length=255, blank=True)
     set_by = models.CharField(max_length=255, blank=True)
     set_at = models.DateTimeField(auto_now=True)

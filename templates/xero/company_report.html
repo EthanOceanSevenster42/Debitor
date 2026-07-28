@@ -33,7 +33,28 @@
         .toolbar { margin:18px 0; }
         .btn { background:var(--teal); color:#fff; border:none; padding:9px 18px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; }
         .muted { color:#9ca3af; }
-        @media print { .toolbar { display:none; } body { padding:0; } }
+        /* ---------- Print / PDF (A4) ---------- */
+        @page { size: A4; margin: 14mm 12mm 16mm; }
+        @media print {
+            html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            body { padding: 0; font-size: 10pt; }
+            .toolbar, .no-print { display: none !important; }
+            .report-head img { height: 38px; }
+            .report-head h1 { font-size: 16pt; }
+            /* Keep headings attached to what follows them. */
+            h2 { page-break-after: avoid; break-after: avoid; }
+            .kv, .summary-tiles, .tile { page-break-inside: avoid; break-inside: avoid; }
+            /* Long lifecycles are taller than a page: let blocks flow across
+               pages instead of pushing to the next page and leaving gaps —
+               rows stay whole and the header row repeats on each page. */
+            .inv-block { page-break-inside: auto; break-inside: auto; }
+            .inv-head { page-break-after: avoid; break-after: avoid; }
+            thead { display: table-header-group; }
+            tr { page-break-inside: avoid; break-inside: avoid; }
+            table { font-size: 8.5pt; }
+            th { font-size: 7.5pt; }
+            a { color: inherit; text-decoration: none; }
+        }
     </style>
 </head>
 <body>
@@ -73,7 +94,7 @@
     {% for item in invoices %}
     <div class="inv-block">
         <div class="inv-head">
-            <span class="n">{{ item.inv.invoice_number }}{% if item.inv.project_code %} &middot; <span class="muted">{{ item.inv.project_code }}</span>{% endif %}{% if item.inv.inspector %} &middot; <span class="muted">Inspector: {{ item.inv.inspector }}</span>{% endif %}{% if item.inv.invoice_id %} &middot; <a href="{% url 'xero_invoice_online' item.inv.invoice_id %}" target="_blank" rel="noopener">View online</a>{% endif %}</span>
+            <span class="n">{{ item.inv.invoice_number }}{% if item.inv.project_code %} &middot; <span class="muted">{{ item.inv.project_code }}</span>{% endif %}{% if item.inv.inspector %} &middot; <span class="muted">Inspector: {{ item.inv.inspector }}</span>{% endif %}{% if item.inv.invoice_id %}<span class="no-print"> &middot; <a href="{% url 'xero_invoice_online' item.inv.invoice_id %}" target="_blank" rel="noopener">View online</a></span>{% endif %}</span>
             <span>Due {{ item.inv.due_date|date:"Y-m-d"|default:"&mdash;" }}
                 {% if item.inv.days_past_due > 0 %}&middot; {{ item.inv.days_past_due }} days overdue{% endif %}
                 &middot; Outstanding <strong>R&nbsp;{{ item.inv.amount_due|floatformat:2|intcomma }}</strong></span>

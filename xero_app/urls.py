@@ -12,6 +12,7 @@ urlpatterns = [
     path("debtor/close/", views.xero_close_debtor, name="xero_close_debtor"),
     path("debtor/reopen/", views.xero_reopen_debtor, name="xero_reopen_debtor"),
     path("invoice/write-off/", views.xero_write_off_invoice, name="xero_write_off_invoice"),
+    path("debtor/write-off/", views.xero_write_off_debtor, name="xero_write_off_debtor"),
     path("invoice/unwrite-off/", views.xero_unwrite_off_invoice, name="xero_unwrite_off_invoice"),
     path("handover/", views.xero_handover, name="xero_handover"),
     path("handover/overrides/", views.xero_handover_overrides, name="xero_handover_overrides"),

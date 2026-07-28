@@ -24,7 +24,11 @@
                 {% endif %}
                 {% if user.is_super_admin %}
                 <a href="{% url 'xero_closed_debtors' %}" class="{% if request.resolver_match.url_name == 'xero_closed_debtors' %}active{% endif %}">Closed Debtors</a>
+                {% endif %}
+                {% if user.is_super_admin or user.is_administrator %}
                 <a href="{% url 'xero_write_offs' %}" class="{% if request.resolver_match.url_name == 'xero_write_offs' %}active{% endif %}">Write-offs</a>
+                {% endif %}
+                {% if user.is_super_admin %}
                 <a href="{% url 'xero_handover' %}" class="{% if request.resolver_match.url_name == 'xero_handover' or request.resolver_match.url_name == 'xero_handover_overrides' %}active{% endif %}">Handover</a>
                 {% endif %}
                 {% if user.is_super_admin or user.is_administrator or user.is_lawyer %}

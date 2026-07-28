@@ -16,7 +16,7 @@ class StyledFormMixin:
 class UserCreateForm(StyledFormMixin, UserCreationForm):
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'email', 'role')
+        fields = ('first_name', 'last_name', 'email', 'role', 'legal_access')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -24,6 +24,8 @@ class UserCreateForm(StyledFormMixin, UserCreationForm):
         self.fields['last_name'].required = True
         self.fields['role'].choices = Role.choices
         self._style()
+        # checkbox shouldn't get the text-input styling
+        self.fields['legal_access'].widget.attrs['class'] = ''
 
 
 class UserInviteForm(StyledFormMixin, forms.ModelForm):
@@ -32,7 +34,7 @@ class UserInviteForm(StyledFormMixin, forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'email', 'role')
+        fields = ('first_name', 'last_name', 'email', 'role', 'legal_access')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -40,12 +42,13 @@ class UserInviteForm(StyledFormMixin, forms.ModelForm):
         self.fields['last_name'].required = True
         self.fields['role'].choices = Role.choices
         self._style()
+        self.fields['legal_access'].widget.attrs['class'] = ''
 
 
 class UserEditForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'email', 'role', 'is_active')
+        fields = ('first_name', 'last_name', 'email', 'role', 'legal_access', 'is_active')
         widgets = {'is_active': forms.CheckboxInput()}
 
     def __init__(self, *args, **kwargs):
@@ -53,8 +56,9 @@ class UserEditForm(StyledFormMixin, forms.ModelForm):
         self.fields['first_name'].required = True
         self.fields['last_name'].required = True
         self._style()
-        # checkbox shouldn't get the text-input styling
+        # checkboxes shouldn't get the text-input styling
         self.fields['is_active'].widget.attrs['class'] = ''
+        self.fields['legal_access'].widget.attrs['class'] = ''
 
 
 class AdminSetPasswordForm(StyledFormMixin, SetPasswordForm):

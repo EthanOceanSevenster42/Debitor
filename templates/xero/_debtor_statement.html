@@ -35,19 +35,26 @@ current_full_path.
     {% endif %}
 
     {% if can_collect and not write_off_page and not handover_page %}
-    {# Per-debtor follow-up cadence shift — for payment arrangements (collections). #}
+    {# Per-debtor follow-up schedule: cadence shift + when each channel becomes due. #}
     <button type="button" class="contact-btn" onclick="toggleHandoverSettings('fset-{{ d.index }}');"
-            style="margin-left:8px;" title="Push this debtor's call/WhatsApp/email reminders later (e.g. a payment arrangement)">
-        &#9203; Follow-up: {% if d.cadence_shift %}+{{ d.cadence_shift }} days{% else %}normal{% endif %}</button>
+            style="margin-left:8px;" title="Set when this debtor must be called / WhatsApped / emailed, or push the whole cadence later (e.g. a payment arrangement)">
+        &#9203; Follow-up: {% if d.cadence_shift or d.call_due_days is not None or d.whatsapp_due_days is not None or d.email_due_days is not None %}custom{% else %}normal{% endif %}</button>
     <form method="post" action="{% url 'xero_followup_shift' %}" id="fset-{{ d.index }}" class="handover-settings-form" style="display:none;">
         {% csrf_token %}
         <input type="hidden" name="contact_id" value="{{ d.cid }}">
         <input type="hidden" name="contact_name" value="{{ d.name }}">
         <input type="hidden" name="next" value="{{ current_full_path }}">
-        <div class="hs-title">Follow-up cadence for {{ d.name }}</div>
-        <label class="hs-opt">Push reminders later by
+        <div class="hs-title">Follow-up schedule for {{ d.name }}</div>
+        <label class="hs-opt">&#128222; Call due from
+            <input type="number" name="call_due_days" min="0" max="3650" value="{{ d.call_due_days|default_if_none:'' }}" class="hs-days" placeholder="{{ default_due_days }}"> days past due</label>
+        <label class="hs-opt">&#128241; WhatsApp due from
+            <input type="number" name="whatsapp_due_days" min="0" max="3650" value="{{ d.whatsapp_due_days|default_if_none:'' }}" class="hs-days" placeholder="{{ default_due_days }}"> days past due</label>
+        <label class="hs-opt">&#9993; Email due from
+            <input type="number" name="email_due_days" min="0" max="3650" value="{{ d.email_due_days|default_if_none:'' }}" class="hs-days" placeholder="{{ default_due_days }}"> days past due</label>
+        <div class="muted" style="font-size:12px; margin:2px 0 8px;">Blank = the default ({{ default_due_days }} days past due). Recovery credit is unaffected: the allocated administrator is credited for any payment on an invoice they followed up, whatever schedule is set here.</div>
+        <label class="hs-opt">Push everything later by
             <input type="number" name="shift_days" min="0" max="3650" value="{{ d.cadence_shift }}" class="hs-days"> days
-            <span class="muted" style="font-size:12px;">(0 = normal). The whole cadence (7/14/21/60/65) moves out together — use for a payment arrangement so the debtor isn't chased and the admin isn't prompted too early.</span></label>
+            <span class="muted" style="font-size:12px;">(0 = normal). Moves the whole cadence out together — use for a payment arrangement so the debtor isn't chased too early.</span></label>
         <label class="hs-opt">Note (optional): <input type="text" name="note" value="" style="width:60%;" placeholder="e.g. R5k/month arrangement until Dec"></label>
         <div class="hs-actions"><button type="submit" class="btn btn-primary btn-sm">Save</button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="toggleHandoverSettings('fset-{{ d.index }}');">Cancel</button></div>
@@ -222,7 +229,12 @@ current_full_path.
                                 <button type="submit" class="row-menu-item moveback" role="menuitem">&#8634; Move back to Debtors Action</button>
                             </form>
                         {% endif %}
+                        {% if can_manage %}
+                        <button type="button" class="row-menu-item write-off" role="menuitem"
+                                onclick="event.stopPropagation(); closeAllRowMenus(); openWriteOffModal('{{ inv.invoice_id }}', '{{ inv.number|escapejs }}', '{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');">&#8855; Write off</button>
+                        {% endif %}
                     {% elif write_off_page %}
+                    {% if can_manage %}
                     <form method="post" action="{% url 'xero_unwrite_off_invoice' %}" onclick="event.stopPropagation();"
                           onsubmit="return confirm('Move invoice {{ inv.number|escapejs }} back to the Debtors Action page?');">
                         {% csrf_token %}
@@ -231,6 +243,7 @@ current_full_path.
                         <input type="hidden" name="next" value="{{ current_full_path }}">
                         <button type="submit" class="row-menu-item moveback" role="menuitem">&#8634; Move back</button>
                     </form>
+                    {% endif %}
                     {% else %}
                     {% if can_manage %}
                     <button type="button" class="row-menu-item handover" role="menuitem"

@@ -647,6 +647,24 @@ def _effective_dpd(days_past_due, contact_id, shift_map):
     return (days_past_due or 0) - shift_map.get(contact_id or "", 0)
 
 
+def _channel_due_map(tenant_id):
+    """contact_id -> {'call': n|None, 'whatsapp': n|None, 'email': n|None} — the
+    per-debtor override of how many days past due each follow-up channel becomes
+    due (None = the default cadence). Only debtors with at least one override
+    are in the map."""
+    out = {}
+    for hs in (HandoverSetting.objects.filter(tenant_id=tenant_id)
+               .exclude(call_due_days__isnull=True,
+                        whatsapp_due_days__isnull=True,
+                        email_due_days__isnull=True)
+               .values("contact_id", "call_due_days", "whatsapp_due_days",
+                       "email_due_days")):
+        out[hs["contact_id"]] = {"call": hs["call_due_days"],
+                                 "whatsapp": hs["whatsapp_due_days"],
+                                 "email": hs["email_due_days"]}
+    return out
+
+
 def _wa_format_phone(num):
     """Reduce a phone string to digits suitable for wa.me. Treats a 10-digit
     SA mobile starting with 0 as +27 (so '082 123 4567' -> '27821234567').
@@ -826,6 +844,7 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
     }
     handover_threshold_map = _handover_threshold_map(tenant_id)
     cadence_shift_map = _cadence_shift_map(tenant_id)
+    channel_due_map = _channel_due_map(tenant_id)
     is_lawyer = request.user.is_lawyer
     alloc_map = {
         a.contact_id: a.administrator
@@ -884,6 +903,18 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
     selected_projects = sorted(requested_projects & all_project_codes)
     selected_projects_set = set(selected_projects)
 
+    # Companies actively with the lawyers leave the Handover page entirely —
+    # their matters are worked from the Lawyers page until closed / brought back.
+    # (Pending ones stay listed so admins can see they await approval.)
+    active_legal_cids = set()
+    if handover_only:
+        for m in LegalMatter.objects.filter(tenant_id=tenant_id,
+                                            status=LegalMatter.ACTIVE):
+            if m.contact_id:
+                active_legal_cids.add(m.contact_id)
+            if m.contact_name:
+                active_legal_cids.add(m.contact_name)
+
     debtors = {}
     bucket_totals = defaultdict(lambda: Decimal(0))
     bucket_counts = defaultdict(int)
@@ -909,11 +940,18 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         elif handover_only:
             if is_written_off or not is_on_handover:
                 continue
-        else:
-            # Open / Closed debtor pages: drop written-off and handover invoices.
-            if is_written_off or is_on_handover:
+            # Closed debtors and companies actively with the lawyers leave the
+            # Handover page — the Closed Debtors / Lawyers pages own them now.
+            if cid in closed_ids or cid in active_legal_cids:
                 continue
-            if (cid in closed_ids) != closed_only:
+        elif closed_only:
+            # Closed page: closed status wins, so a debtor closed from the
+            # Handover page still shows here with ALL its open invoices.
+            if is_written_off or cid not in closed_ids:
+                continue
+        else:
+            # Open debtors page: drop written-off, handover and closed.
+            if is_written_off or is_on_handover or cid in closed_ids:
                 continue
 
         # Allocation-based visibility for non-super-admins.
@@ -933,9 +971,13 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         # Invoices issued before go-live never flag as missed (they pre-date the
         # tool), but can still be contacted.
         pre_go_live = _missed_suppressed(s["invoice_date"], go_live_date)
-        inv_missed_call = (not pre_go_live) and outreach.missed_call(eff_dpd, iid in ever_call_invoices)
-        inv_missed_wa = (not pre_go_live) and outreach.missed_call(eff_dpd, iid in ever_wa_invoices)
-        inv_missed_email = (not pre_go_live) and outreach.missed_call(eff_dpd, iid in ever_email_invoices)
+        ch_over = channel_due_map.get(s["contact_id"]) or {}
+        inv_missed_call = (not pre_go_live) and outreach.channel_missed(
+            eff_dpd, iid in ever_call_invoices, ch_over.get("call"))
+        inv_missed_wa = (not pre_go_live) and outreach.channel_missed(
+            eff_dpd, iid in ever_wa_invoices, ch_over.get("whatsapp"))
+        inv_missed_email = (not pre_go_live) and outreach.channel_missed(
+            eff_dpd, iid in ever_email_invoices, ch_over.get("email"))
         inv_missed = inv_missed_call or inv_missed_wa or inv_missed_email
         if selected_stage == "missed":
             if not inv_missed:
@@ -991,12 +1033,14 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         d["buckets"][b] += ad
         d["counts"][b] += 1
         d["total"] += ad
-        stage_label, inv_call_stage = outreach.current_stage(eff_dpd)
-        # Each channel is due when in-window and not actioned via that channel
-        # within the suppress window.
-        d["needs_call"] = d["needs_call"] or (inv_call_stage and iid not in recent_call_invoices)
-        d["needs_whatsapp"] = d["needs_whatsapp"] or (inv_call_stage and iid not in recent_wa_invoices)
-        d["needs_email"] = d["needs_email"] or (inv_call_stage and iid not in recent_email_invoices)
+        # Each channel is due when in its (possibly per-debtor-customised) window
+        # and not actioned via that channel within the suppress window.
+        d["needs_call"] = d["needs_call"] or (
+            outreach.channel_due(eff_dpd, ch_over.get("call")) and iid not in recent_call_invoices)
+        d["needs_whatsapp"] = d["needs_whatsapp"] or (
+            outreach.channel_due(eff_dpd, ch_over.get("whatsapp")) and iid not in recent_wa_invoices)
+        d["needs_email"] = d["needs_email"] or (
+            outreach.channel_due(eff_dpd, ch_over.get("email")) and iid not in recent_email_invoices)
         d["missed_call"] = d["missed_call"] or inv_missed_call
         d["missed_whatsapp"] = d["missed_whatsapp"] or inv_missed_wa
         d["missed_email"] = d["missed_email"] or inv_missed_email
@@ -1182,11 +1226,13 @@ def xero_reopen_debtor(request):
 
 @login_required
 def xero_write_offs(request):
-    """Write-off Invoices page — invoices the user has marked for write-off."""
+    """Write-off Invoices page — invoices marked for write-off. Super Admins see
+    everything and can reverse; Administrators get a read-only view of the
+    (Super-Admin-approved) write-offs in their own allocated book."""
     tenant_id = _current_tenant_id(request)
     if not tenant_id:
         return redirect("xero_login")
-    if not _can_manage(request.user):
+    if not _can_collect(request.user):
         return redirect("xero_dashboard")
     ctx = _aging_context(request, tenant_id, closed_only=False, write_off_only=True)
     ctx["closed_page"] = False
@@ -1239,6 +1285,61 @@ def xero_write_off_invoice(request):
     if is_ajax:
         return JsonResponse({"ok": True})
     messages.success(request, f"Invoice {invoice_number or invoice_id} moved to Write-off Invoices.")
+    return redirect(request.POST.get("next") or "xero_aging_report")
+
+
+@login_required
+@require_POST
+def xero_write_off_debtor(request):
+    """Write off ALL of a debtor's open invoices at once (Super Admin only).
+    Available from the Debtors Action and Handover pages. A reason is required
+    and is logged on every affected invoice's lifecycle."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    if not _can_manage(request.user):
+        messages.error(request, "Only a Super Admin can write off a client.")
+        return redirect(request.POST.get("next") or "xero_aging_report")
+    contact_id = (request.POST.get("contact_id") or "").strip()
+    contact_name = (request.POST.get("contact_name") or "").strip()
+    reason = (request.POST.get("reason") or "").strip()
+    if not contact_id or not reason:
+        messages.error(request, "A reason is required to write off a client.")
+        return redirect(request.POST.get("next") or "xero_aging_report")
+
+    # cid may be a contact_id or (for id-less contacts) the contact name — the
+    # same key the listing pages group on.
+    snaps = list(OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id, contact_id=contact_id))
+    if not snaps:
+        snaps = list(OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id, contact_name=contact_id))
+    already = set(WriteOffInvoice.objects.filter(tenant_id=tenant_id)
+                  .values_list("invoice_id", flat=True))
+    now_ts = timezone.now()
+    count = 0
+    for s in snaps:
+        if s.invoice_id in already:
+            continue
+        WriteOffInvoice.objects.create(
+            tenant_id=tenant_id, invoice_id=s.invoice_id,
+            invoice_number=s.invoice_number,
+            contact_id=s.contact_id or contact_id,
+            contact_name=s.contact_name or contact_name,
+            written_off_by=request.user.email,
+        )
+        InvoiceComment.objects.create(
+            tenant_id=tenant_id, invoice_id=s.invoice_id, author=request.user,
+            author_name=request.user.get_full_name() or request.user.email,
+            comment_at=now_ts,
+            text=f"Written off (whole client) — {reason}",
+        )
+        count += 1
+    if count:
+        messages.success(
+            request,
+            f"{contact_name or contact_id}: {count} open invoice{'s' if count != 1 else ''} "
+            f"written off and moved to Write-off Invoices.")
+    else:
+        messages.info(request, f"{contact_name or contact_id}: no open invoices left to write off.")
     return redirect(request.POST.get("next") or "xero_aging_report")
 
 
@@ -1534,10 +1635,11 @@ def xero_handover_settings(request):
 @login_required
 @require_POST
 def xero_followup_shift(request):
-    """Set a debtor's follow-up cadence shift — push the call/WhatsApp/email
-    prompts (and missed flags) later by N days, e.g. for a payment arrangement so
-    the debtor isn't chased and the admin isn't prompted too early. A collections
-    action (administrators + super admins)."""
+    """Set a debtor's follow-up schedule: the cadence shift (push everything N
+    days later, e.g. a payment arrangement) and/or per-channel start days — how
+    many days past due before the client must be called / WhatsApped / emailed
+    (blank = the system default). A collections action (administrators + super
+    admins)."""
     tenant_id = _current_tenant_id(request)
     if not tenant_id:
         return redirect("xero_login")
@@ -1553,18 +1655,40 @@ def xero_followup_shift(request):
         except (ValueError, TypeError):
             shift = 0
         shift = max(0, min(shift, 3650))
+
+        def _due_days(field):
+            """Parse an optional per-channel start day; '' = default (None)."""
+            raw = (request.POST.get(field) or "").strip()
+            if raw == "":
+                return None
+            try:
+                return max(0, min(int(raw), 3650))
+            except (ValueError, TypeError):
+                return None
+
         hs, _ = HandoverSetting.objects.get_or_create(
             tenant_id=tenant_id, contact_id=contact_id,
             defaults={"contact_name": contact_name})
         hs.cadence_shift_days = shift
+        hs.call_due_days = _due_days("call_due_days")
+        hs.whatsapp_due_days = _due_days("whatsapp_due_days")
+        hs.email_due_days = _due_days("email_due_days")
         if note:
             hs.note = note
         hs.set_by = request.user.email
         hs.save()
+        parts = []
         if shift:
-            messages.success(request, f"{contact_name or contact_id}: follow-up cadence pushed {shift} days later.")
+            parts.append(f"cadence pushed {shift} days later")
+        for label, val in (("call", hs.call_due_days),
+                           ("WhatsApp", hs.whatsapp_due_days),
+                           ("email", hs.email_due_days)):
+            if val is not None:
+                parts.append(f"{label} due from day {val}")
+        if parts:
+            messages.success(request, f"{contact_name or contact_id}: follow-up schedule saved — {', '.join(parts)}.")
         else:
-            messages.success(request, f"{contact_name or contact_id}: follow-up cadence reset to normal.")
+            messages.success(request, f"{contact_name or contact_id}: follow-up schedule reset to the default cadence.")
     return redirect(request.POST.get("next") or "xero_aging_report")
 
 
@@ -1601,8 +1725,9 @@ def _can_approve_legal(user):
 
 def _can_work_legal(user):
     """Drive the workflow itself — tick steps, comment, choose route, toggle
-    Opposed/Unopposed (the attorneys, plus super admins)."""
-    return user.is_lawyer or user.is_super_admin
+    Opposed/Unopposed (the attorneys, super admins, and any user granted the
+    per-user 'Lawyers page access' flag)."""
+    return user.is_lawyer or user.is_super_admin or getattr(user, "legal_access", False)
 
 
 @login_required
@@ -1818,12 +1943,32 @@ def xero_legal(request):
     litigation_keys = (legal_workflow.ALL_STEP_KEYS
                        - {t[0] for t in legal_workflow.COLLECTIONS})
 
+    # Total each company still owes FSA (open invoices), for the matter cards.
+    # Keyed by contact_id with a contact_name fallback, mirroring how the matter
+    # page and company report resolve a matter to its invoices.
+    owed_by_cid = {
+        r["contact_id"]: r["s"] for r in
+        OpenInvoiceSnapshot.objects
+        .filter(tenant_id=tenant_id,
+                contact_id__in=[m.contact_id for m in matters if m.contact_id])
+        .values("contact_id").annotate(s=Sum("amount_due"))}
+    fallback_names = [m.contact_name for m in matters
+                      if m.contact_name and m.contact_id not in owed_by_cid]
+    owed_by_name = {
+        r["contact_name"]: r["s"] for r in
+        OpenInvoiceSnapshot.objects
+        .filter(tenant_id=tenant_id, contact_name__in=fallback_names)
+        .values("contact_name").annotate(s=Sum("amount_due"))} if fallback_names else {}
+
     # Per-matter quick progress (done / total across all currently-shown steps),
     # the always-visible milestone timeline, and a staleness flag.
     now = timezone.now()
     active_pct = []
     not_in_litigation = 0
     for m in matters:
+        m.amount_owed = (owed_by_cid.get(m.contact_id)
+                         or owed_by_name.get(m.contact_name) or Decimal(0))
+        m.report_cid = m.contact_id or m.contact_name
         visible = legal_workflow.visible_step_keys(m.summons_opposed, m.application_opposed)
         m.progress_total = len(visible)
         done_keys = set(m.step_states.filter(done=True).values_list("step_key", flat=True))
@@ -2030,6 +2175,7 @@ def xero_debtor_statement(request):
                      for h in HandoverInvoice.objects.filter(tenant_id=tenant_id)}
     handover_threshold_map = _handover_threshold_map(tenant_id)
     cadence_shift_map = _cadence_shift_map(tenant_id)
+    channel_due_map = _channel_due_map(tenant_id)
     since = timezone.now() - timedelta(days=7)
     recent_logs, ever_logs = _contact_log_sets(tenant_id, since)
     recent_call_invoices = recent_logs[CallLog.ACTION_CALL]
@@ -2065,6 +2211,11 @@ def xero_debtor_statement(request):
         elif handover_page:
             if is_written_off or not is_on_handover:
                 continue
+        elif scope == "closed":
+            # Closed debtors keep all their open invoices visible here (incl.
+            # any on handover) — mirrors the Closed Debtors page scope.
+            if is_written_off:
+                continue
         else:
             if is_written_off or is_on_handover:
                 continue
@@ -2072,9 +2223,13 @@ def xero_debtor_statement(request):
         iid = s["invoice_id"]
         eff_dpd = _effective_dpd(dpd, s["contact_id"], cadence_shift_map)
         pre_go_live = _missed_suppressed(s["invoice_date"], go_live_date)
-        inv_missed_call = (not pre_go_live) and outreach.missed_call(eff_dpd, iid in ever_call_invoices)
-        inv_missed_wa = (not pre_go_live) and outreach.missed_call(eff_dpd, iid in ever_wa_invoices)
-        inv_missed_email = (not pre_go_live) and outreach.missed_call(eff_dpd, iid in ever_email_invoices)
+        ch_over = channel_due_map.get(s["contact_id"]) or {}
+        inv_missed_call = (not pre_go_live) and outreach.channel_missed(
+            eff_dpd, iid in ever_call_invoices, ch_over.get("call"))
+        inv_missed_wa = (not pre_go_live) and outreach.channel_missed(
+            eff_dpd, iid in ever_wa_invoices, ch_over.get("whatsapp"))
+        inv_missed_email = (not pre_go_live) and outreach.channel_missed(
+            eff_dpd, iid in ever_email_invoices, ch_over.get("email"))
         inv_missed = inv_missed_call or inv_missed_wa or inv_missed_email
         if selected_stage == "missed":
             if not inv_missed:
@@ -2094,7 +2249,10 @@ def xero_debtor_statement(request):
         contact_id = contact_id or (s["contact_id"] or "")
         contact_name = contact_name or (s["contact_name"] or "")
         contact_email = contact_email or (s["contact_email"] or "")
-        stage_label, inv_call_stage = outreach.current_stage(eff_dpd)
+        stage_label, _default_call_stage = outreach.current_stage(eff_dpd)
+        due_call = outreach.channel_due(eff_dpd, ch_over.get("call"))
+        due_wa = outreach.channel_due(eff_dpd, ch_over.get("whatsapp"))
+        due_email = outreach.channel_due(eff_dpd, ch_over.get("email"))
         called_recently = iid in recent_call_invoices
         whatsapped_recently = iid in recent_wa_invoices
         emailed_recently = iid in recent_email_invoices
@@ -2114,9 +2272,9 @@ def xero_debtor_statement(request):
             "stage": stage_label,
             # Each channel is due when in-window and not actioned via that channel
             # within the suppress window; "done" markers offer an undo.
-            "needs_call": inv_call_stage and not called_recently,
-            "needs_whatsapp": inv_call_stage and not whatsapped_recently,
-            "needs_email": inv_call_stage and not emailed_recently,
+            "needs_call": due_call and not called_recently,
+            "needs_whatsapp": due_wa and not whatsapped_recently,
+            "needs_email": due_email and not emailed_recently,
             "called_recently": called_recently,
             "whatsapped_recently": whatsapped_recently,
             "emailed_recently": emailed_recently,
@@ -2192,6 +2350,9 @@ def xero_debtor_statement(request):
          "handover_days": hs.handover_days if hs else HANDOVER_DAYS,
          "handover_custom": bool(hs),
          "cadence_shift": hs.cadence_shift_days if hs else 0,
+         "call_due_days": hs.call_due_days if hs else None,
+         "whatsapp_due_days": hs.whatsapp_due_days if hs else None,
+         "email_due_days": hs.email_due_days if hs else None,
          "legal_status": legal.status if legal else "",
          "legal_status_label": legal.get_status_display() if legal else "",
          "legal_id": legal.id if legal else None,
@@ -2205,6 +2366,7 @@ def xero_debtor_statement(request):
         "can_collect": _can_collect(request.user),
         "can_approve_legal": request.user.is_super_admin,
         "default_handover_days": HANDOVER_DAYS,
+        "default_due_days": outreach.CALL_MIN,
         # Used as the `next` value on embedded forms so they redirect back to the
         # page the user expanded from (not to this fragment endpoint).
         "current_full_path": request.GET.get("from") or "/xero/aging/",
@@ -3249,6 +3411,7 @@ def xero_dashboard(request):
     ever_email_invoices = ever_logs[CallLog.ACTION_EMAIL]
     go_live_date = SystemSetting.get_solo().go_live_date
     cadence_shift_map = _cadence_shift_map(tenant_id)
+    channel_due_map = _channel_due_map(tenant_id)
     # Closed businesses are excluded from all dashboard figures.
     closed_ids = set(ClosedDebtor.objects.filter(tenant_id=tenant_id)
                      .values_list("contact_id", flat=True))
@@ -3290,14 +3453,15 @@ def xero_dashboard(request):
         da["total"] += ad
         da["max_dpd"] = max(da["max_dpd"], dpd or 0)
         called_recently = s["invoice_id"] in recent_call_invoices
-        needs_call_now = outreach.needs_call(eff_dpd) and not called_recently
+        ch_over = channel_due_map.get(s["contact_id"]) or {}
+        needs_call_now = outreach.channel_due(eff_dpd, ch_over.get("call")) and not called_recently
         is_final = outreach.is_final_demand(eff_dpd)
         is_hand = outreach.is_handover(eff_dpd)
         iid = s["invoice_id"]
         is_missed = (not _missed_suppressed(s["invoice_date"], go_live_date)) and (
-                     outreach.missed_call(eff_dpd, iid in ever_call_invoices)
-                     or outreach.missed_call(eff_dpd, iid in ever_wa_invoices)
-                     or outreach.missed_call(eff_dpd, iid in ever_email_invoices))
+                     outreach.channel_missed(eff_dpd, iid in ever_call_invoices, ch_over.get("call"))
+                     or outreach.channel_missed(eff_dpd, iid in ever_wa_invoices, ch_over.get("whatsapp"))
+                     or outreach.channel_missed(eff_dpd, iid in ever_email_invoices, ch_over.get("email")))
 
         system_total += ad
         system_mom[key] += ad

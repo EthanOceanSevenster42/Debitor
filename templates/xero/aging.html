@@ -169,6 +169,8 @@
     .debtor-action-btn.reopen:hover { background: var(--brand-teal); color: #fff; }
     .debtor-action-btn.report { background: #fff; color: var(--navy); border-color: #cbd5e1; text-decoration: none; display: inline-block; margin-right: 4px; }
     .debtor-action-btn.report:hover { background: var(--navy); color: #fff; text-decoration: none; }
+    .debtor-action-btn.write-off { background: #fff; color: #92400e; border-color: #fcd34d; margin-right: 4px; }
+    .debtor-action-btn.write-off:hover { background: #92400e; border-color: #92400e; color: #fff; }
     .stmt-report { font-size: 11px; font-weight: 600; white-space: nowrap; }
     .debtor-detail > td { background: #fbfdfd !important; padding: 0 0 0 28px; border-bottom: 2px solid #e5e7eb; }
     .statement { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 12.5px; }
@@ -516,9 +518,36 @@ function submitWriteOff(e) {
     // Allow native form submit (CSRF + redirect handled server-side).
     return true;
 }
+// --- Whole-client write-off modal ---
+function openWriteOffAllModal(contactId, contactName) {
+    var bd = document.getElementById('woAllBackdrop');
+    if (!bd) return;
+    document.getElementById('woAllContactId').value = contactId;
+    document.getElementById('woAllContactName').value = contactName;
+    document.getElementById('woAllName').textContent = contactName || '';
+    document.getElementById('woAllReason').value = '';
+    document.getElementById('woAllErr').textContent = '';
+    bd.classList.add('open');
+    setTimeout(function () { document.getElementById('woAllReason').focus(); }, 30);
+}
+function closeWriteOffAllModal(e) {
+    if (e && e.target && e.target.id !== 'woAllBackdrop') return;
+    var bd = document.getElementById('woAllBackdrop');
+    if (bd) bd.classList.remove('open');
+}
+function submitWriteOffAll(e) {
+    var reason = document.getElementById('woAllReason').value.trim();
+    if (!reason) {
+        e.preventDefault();
+        document.getElementById('woAllErr').textContent = 'Please give a reason for writing off this client.';
+        return false;
+    }
+    return true;
+}
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
         closeWriteOffModal({target: {id: 'woBackdrop'}});
+        closeWriteOffAllModal({target: {id: 'woAllBackdrop'}});
         closeHandoverModal({target: {id: 'hoBackdrop'}});
         closeAllRowMenus();
         closeTplPops();
@@ -875,6 +904,9 @@ document.addEventListener('click', function (e) {
                         <button type="submit" class="debtor-action-btn reopen">&#8634; Reopen</button>
                     </form>
                     {% elif can_manage and not write_off_page and not closed_page %}
+                    <button type="button" class="debtor-action-btn write-off"
+                            onclick="event.stopPropagation(); openWriteOffAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
+                            title="Write off ALL this client's open invoices">&#8855; Write off client</button>
                     <form method="post" action="{% url 'xero_close_debtor' %}" class="debtor-action" onclick="event.stopPropagation();"
                           onsubmit="return confirm('Mark {{ d.name|escapejs }} as closed? They will move to the Closed Debtors page.');">
                         {% csrf_token %}
@@ -938,7 +970,7 @@ document.addEventListener('click', function (e) {
     </div>
     {% endif %}
 
-    {% if not closed_page and not write_off_page and not handover_page %}
+    {% if not closed_page and not write_off_page %}
     <div id="woBackdrop" class="wo-backdrop" onclick="closeWriteOffModal(event)">
         <form id="woForm" class="wo-card" method="post" action="{% url 'xero_write_off_invoice' %}"
               onclick="event.stopPropagation();" onsubmit="return submitWriteOff(event);">
@@ -956,6 +988,28 @@ document.addEventListener('click', function (e) {
             <div class="actions">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="closeWriteOffModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary btn-sm">Confirm write-off</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if can_manage and not closed_page and not write_off_page %}
+    <div id="woAllBackdrop" class="wo-backdrop" onclick="closeWriteOffAllModal(event)">
+        <form id="woAllForm" class="wo-card" method="post" action="{% url 'xero_write_off_debtor' %}"
+              onclick="event.stopPropagation();" onsubmit="return submitWriteOffAll(event);">
+            {% csrf_token %}
+            <h3>Write off client <span id="woAllName"></span></h3>
+            <div class="sub">ALL of this client's open invoices will be written off and moved to the
+                Write-off Invoices page. The reason is recorded on every invoice's lifecycle.</div>
+            <label for="woAllReason">Reason for writing off <span style="color:var(--brand-red);">*</span></label>
+            <textarea id="woAllReason" name="reason" required placeholder="e.g. Client liquidated &mdash; debt deemed uncollectible."></textarea>
+            <div id="woAllErr" class="err"></div>
+            <input type="hidden" name="contact_id" id="woAllContactId">
+            <input type="hidden" name="contact_name" id="woAllContactName">
+            <input type="hidden" name="next" value="{{ current_full_path }}">
+            <div class="actions">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeWriteOffAllModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Write off ALL open invoices</button>
             </div>
         </form>
     </div>
