@@ -171,6 +171,8 @@
     .debtor-action-btn.report:hover { background: var(--navy); color: #fff; text-decoration: none; }
     .debtor-action-btn.write-off { background: #fff; color: #92400e; border-color: #fcd34d; margin-right: 4px; }
     .debtor-action-btn.write-off:hover { background: #92400e; border-color: #92400e; color: #fff; }
+    .debtor-action-btn.handover { background: #fff; color: #3730a3; border-color: #c7d2fe; margin-right: 4px; }
+    .debtor-action-btn.handover:hover { background: #3730a3; border-color: #3730a3; color: #fff; }
     .stmt-report { font-size: 11px; font-weight: 600; white-space: nowrap; }
     .debtor-detail > td { background: #fbfdfd !important; padding: 0 0 0 28px; border-bottom: 2px solid #e5e7eb; }
     .statement { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 12.5px; }
@@ -518,6 +520,33 @@ function submitWriteOff(e) {
     // Allow native form submit (CSRF + redirect handled server-side).
     return true;
 }
+// --- Whole-client immediate-handover modal ---
+function openHandoverAllModal(contactId, contactName) {
+    var bd = document.getElementById('hoAllBackdrop');
+    if (!bd) return;
+    document.getElementById('hoAllContactId').value = contactId;
+    document.getElementById('hoAllContactName').value = contactName;
+    document.getElementById('hoAllName').textContent = contactName || '';
+    document.getElementById('hoAllReason').value = '';
+    document.getElementById('hoAllErr').textContent = '';
+    bd.classList.add('open');
+    setTimeout(function () { document.getElementById('hoAllReason').focus(); }, 30);
+}
+function closeHandoverAllModal(e) {
+    if (e && e.target && e.target.id !== 'hoAllBackdrop') return;
+    var bd = document.getElementById('hoAllBackdrop');
+    if (bd) bd.classList.remove('open');
+}
+function submitHandoverAll(e) {
+    var reason = document.getElementById('hoAllReason').value.trim();
+    if (!reason) {
+        e.preventDefault();
+        document.getElementById('hoAllErr').textContent = 'Please give a reason for handing over this client.';
+        return false;
+    }
+    return true;
+}
+
 // --- Whole-client write-off modal ---
 function openWriteOffAllModal(contactId, contactName) {
     var bd = document.getElementById('woAllBackdrop');
@@ -549,6 +578,7 @@ document.addEventListener('keydown', function (e) {
         closeWriteOffModal({target: {id: 'woBackdrop'}});
         closeWriteOffAllModal({target: {id: 'woAllBackdrop'}});
         closeHandoverModal({target: {id: 'hoBackdrop'}});
+        closeHandoverAllModal({target: {id: 'hoAllBackdrop'}});
         closeAllRowMenus();
         closeTplPops();
     }
@@ -904,6 +934,11 @@ document.addEventListener('click', function (e) {
                         <button type="submit" class="debtor-action-btn reopen">&#8634; Reopen</button>
                     </form>
                     {% elif can_manage and not write_off_page and not closed_page %}
+                    {% if not handover_page %}
+                    <button type="button" class="debtor-action-btn handover"
+                            onclick="event.stopPropagation(); openHandoverAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
+                            title="Immediately move ALL this client's open invoices to the Handover page (no waiting for the aging threshold)">&#9889; Hand over client</button>
+                    {% endif %}
                     <button type="button" class="debtor-action-btn write-off"
                             onclick="event.stopPropagation(); openWriteOffAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
                             title="Write off ALL this client's open invoices">&#8855; Write off client</button>
@@ -988,6 +1023,29 @@ document.addEventListener('click', function (e) {
             <div class="actions">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="closeWriteOffModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary btn-sm">Confirm write-off</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if can_manage and not closed_page and not write_off_page and not handover_page %}
+    <div id="hoAllBackdrop" class="wo-backdrop" onclick="closeHandoverAllModal(event)">
+        <form id="hoAllForm" class="wo-card" method="post" action="{% url 'xero_handover_debtor' %}"
+              onclick="event.stopPropagation();" onsubmit="return submitHandoverAll(event);">
+            {% csrf_token %}
+            <h3>Hand over client <span id="hoAllName"></span></h3>
+            <div class="sub">ALL of this client's open invoices move to the <strong>Handover page immediately</strong> —
+                no waiting for the aging threshold — and future invoices will auto-hand over as soon as they fall due.
+                The reason is recorded on every invoice's lifecycle.</div>
+            <label for="hoAllReason">Reason for handing over <span style="color:var(--brand-red);">*</span></label>
+            <textarea id="hoAllReason" name="reason" required placeholder="e.g. Client unresponsive across all invoices &mdash; escalating the whole account."></textarea>
+            <div id="hoAllErr" class="err"></div>
+            <input type="hidden" name="contact_id" id="hoAllContactId">
+            <input type="hidden" name="contact_name" id="hoAllContactName">
+            <input type="hidden" name="next" value="{{ current_full_path }}">
+            <div class="actions">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeHandoverAllModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Hand over ALL open invoices</button>
             </div>
         </form>
     </div>

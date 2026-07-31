@@ -22,6 +22,8 @@
         .tag.teal { background:#e0f2f2; color:#065f5e; } .tag.amber { background:#fff4e5; color:#b45309; }
         .tag.red { background:#fee2e2; color:#991b1b; } .tag.navy { background:#e5e9f0; color:var(--navy); }
         table { width:100%; border-collapse:collapse; font-size:13px; margin:8px 0; }
+        /* Small screens: tables pan sideways inside their own scroll area. */
+        @media (max-width: 900px) { table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; } }
         th { background:#f1f5f5; text-align:left; padding:7px 9px; border-bottom:2px solid #d6efee; }
         td { padding:7px 9px; border-bottom:1px solid #eef2f2; vertical-align:top; }
         .toc { background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:14px 20px; }

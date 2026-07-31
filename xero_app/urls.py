@@ -17,6 +17,7 @@ urlpatterns = [
     path("handover/", views.xero_handover, name="xero_handover"),
     path("handover/overrides/", views.xero_handover_overrides, name="xero_handover_overrides"),
     path("invoice/handover/", views.xero_handover_mark, name="xero_handover_mark"),
+    path("debtor/handover/", views.xero_handover_debtor, name="xero_handover_debtor"),
     path("invoice/handover/unmark/", views.xero_handover_unmark, name="xero_handover_unmark"),
     path("debtor/handover-settings/", views.xero_handover_settings, name="xero_handover_settings"),
     path("debtor/followup-shift/", views.xero_followup_shift, name="xero_followup_shift"),

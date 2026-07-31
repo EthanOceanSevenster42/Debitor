@@ -1441,6 +1441,75 @@ def xero_handover_mark(request):
 
 @login_required
 @require_POST
+def xero_handover_debtor(request):
+    """Immediately hand over a WHOLE client: mark all their open invoices for
+    handover (regardless of age) so they land on the Handover page now, and set
+    the debtor to auto-hand over from day 0 so future invoices follow as soon as
+    they fall due. Super Admin only; a reason is required and is logged on every
+    affected invoice's lifecycle."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    if not _can_handover_manage(request.user):
+        messages.error(request, "Only a Super Admin can hand over a client.")
+        return redirect(request.POST.get("next") or "xero_aging_report")
+    contact_id = (request.POST.get("contact_id") or "").strip()
+    contact_name = (request.POST.get("contact_name") or "").strip()
+    reason = (request.POST.get("reason") or "").strip()
+    if not contact_id or not reason:
+        messages.error(request, "A reason is required to hand over a client.")
+        return redirect(request.POST.get("next") or "xero_aging_report")
+
+    # cid may be a contact_id or (for id-less contacts) the contact name — the
+    # same key the listing pages group on.
+    snaps = list(OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id, contact_id=contact_id))
+    if not snaps:
+        snaps = list(OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id, contact_name=contact_id))
+    written_off = set(WriteOffInvoice.objects.filter(tenant_id=tenant_id)
+                      .values_list("invoice_id", flat=True))
+    already = set(HandoverInvoice.objects.filter(tenant_id=tenant_id)
+                  .values_list("invoice_id", flat=True))
+    now_ts = timezone.now()
+    count = 0
+    for s in snaps:
+        if s.invoice_id in written_off or s.invoice_id in already:
+            continue
+        HandoverInvoice.objects.create(
+            tenant_id=tenant_id, invoice_id=s.invoice_id,
+            invoice_number=s.invoice_number,
+            contact_id=s.contact_id or contact_id,
+            contact_name=s.contact_name or contact_name,
+            source=HandoverInvoice.SOURCE_MANUAL,
+            marked_by=request.user.email,
+        )
+        InvoiceComment.objects.create(
+            tenant_id=tenant_id, invoice_id=s.invoice_id, author=request.user,
+            author_name=request.user.get_full_name() or request.user.email,
+            comment_at=now_ts,
+            text=f"Marked for handover (whole client) — {reason}",
+        )
+        count += 1
+    # The client is handed over as a whole, so future invoices join the
+    # Handover page automatically the moment they fall due.
+    HandoverSetting.objects.update_or_create(
+        tenant_id=tenant_id, contact_id=contact_id,
+        defaults={"contact_name": contact_name, "auto_handover": True,
+                  "handover_days": 0,
+                  "note": f"Immediate handover — {reason}"[:255],
+                  "set_by": request.user.email},
+    )
+    if count:
+        messages.success(
+            request,
+            f"{contact_name or contact_id}: {count} open invoice{'s' if count != 1 else ''} "
+            f"moved to Handover. Future invoices will auto-hand over when due.")
+    else:
+        messages.info(request, f"{contact_name or contact_id}: all open invoices were already on Handover (or written off).")
+    return redirect(request.POST.get("next") or "xero_aging_report")
+
+
+@login_required
+@require_POST
 def xero_handover_unmark(request):
     """Move an invoice back from Handover to the Debtors Action page. Lawyers
     can't do this. If the invoice would otherwise be re-auto-listed (past the
@@ -1996,6 +2065,14 @@ def xero_legal(request):
 
     active_count = sum(1 for m in matters if m.status == LegalMatter.ACTIVE)
 
+    # Headline tile: everything the active-with-lawyers companies still owe FSA
+    # (the sum of the per-matter "Owes" badges; pending shown as a hint so the
+    # headline reflects money actually in the lawyers' hands).
+    kpi_owed_active = sum((m.amount_owed for m in matters
+                           if m.status == LegalMatter.ACTIVE), Decimal(0))
+    kpi_owed_pending = sum((m.amount_owed for m in matters
+                            if m.status == LegalMatter.PENDING), Decimal(0))
+
     # Money the lawyers have recovered (invoices paid off on approved matters) — a
     # team total, since matters aren't assigned to individual attorneys.
     month_start = timezone.localtime(timezone.now()).replace(
@@ -2020,6 +2097,8 @@ def xero_legal(request):
         "kpi_closed": sum(1 for m in matters if m.status == LegalMatter.CLOSED),
         "kpi_recovered_month": kpi_recovered_month,
         "kpi_recovered_total": kpi_recovered_total,
+        "kpi_owed_active": kpi_owed_active,
+        "kpi_owed_pending": kpi_owed_pending,
     })
 
 

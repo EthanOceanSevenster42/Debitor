@@ -29,6 +29,7 @@
     .lk-tile.amber { background: #fff7ed; border-color: #fed7aa; } .lk-tile.amber .lk-label, .lk-tile.amber .lk-value { color: #9a3412; }
     .lk-tile.warn { background: #fef9c3; border-color: #fde68a; } .lk-tile.warn .lk-label, .lk-tile.warn .lk-value { color: #854d0e; }
     .lk-tile.green { background: #ecfdf5; border-color: #a7f3d0; } .lk-tile.green .lk-label, .lk-tile.green .lk-value { color: #047857; }
+    .lk-tile.red { background: #fef2f2; border-color: #fecaca; } .lk-tile.red .lk-label, .lk-tile.red .lk-value { color: #b91c1c; }
     /* Stale-matter highlight (no activity for a while) */
     .lm-card.warn { background: #fffbeb; border-color: #fcd34d; }
     .lm-card.stale { background: #fef2f2; border-color: #fca5a5; }
@@ -65,6 +66,7 @@
 
     {# ---- Lawyer dashboard KPIs ---- #}
     <div class="lk-grid">
+        <div class="lk-tile red"><div class="lk-label">&#9878; Total owed (with lawyers)</div><div class="lk-value">R&nbsp;{{ kpi_owed_active|floatformat:2|intcomma }}</div><div class="lk-hint">across {{ kpi_active }} active matter{{ kpi_active|pluralize }}{% if kpi_owed_pending %} &middot; pending approval R {{ kpi_owed_pending|floatformat:2|intcomma }}{% endif %}</div></div>
         <div class="lk-tile green"><div class="lk-label">&#128176; Recovered (with lawyers)</div><div class="lk-value">R&nbsp;{{ kpi_recovered_month|floatformat:2|intcomma }}</div><div class="lk-hint">this month &middot; all-time R {{ kpi_recovered_total|floatformat:2|intcomma }}</div></div>
         <div class="lk-tile"><div class="lk-label">Active matters</div><div class="lk-value">{{ kpi_active }}</div></div>
         <div class="lk-tile teal"><div class="lk-label">Avg completion</div><div class="lk-value">{{ kpi_avg_completion }}%</div></div>
