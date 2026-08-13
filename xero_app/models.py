@@ -250,6 +250,11 @@ class WriteOffInvoice(models.Model):
     contact_name = models.CharField(max_length=255, blank=True)
     written_off_by = models.CharField(max_length=255, blank=True)
     written_off_at = models.DateTimeField(auto_now_add=True)
+    # Ticked (Super Admin only) once the matching credit note has been issued
+    # in Xero for this written-off invoice.
+    credit_note_issued = models.BooleanField(default=False)
+    credit_note_by = models.CharField(max_length=255, blank=True, default="")
+    credit_note_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         unique_together = [("tenant_id", "invoice_id")]
@@ -273,6 +278,32 @@ class ContactDetail(models.Model):
 
     class Meta:
         unique_together = [("tenant_id", "contact_id")]
+
+
+class DebtorComment(models.Model):
+    """A comment on a DEBTOR (company) rather than a single invoice — the
+    per-debtor mini chat. Shown in the debtor's expanded statement on the
+    Debtors Action, Handover and Write-off pages, so the whole team sees the
+    same running conversation about the client wherever they meet them.
+    Keyed by the same debtor id the listing pages group on (contact_id, or
+    the contact name when no id is present)."""
+    tenant_id = models.CharField(max_length=64, db_index=True)
+    contact_id = models.CharField(max_length=255, db_index=True)
+    contact_name = models.CharField(max_length=255, blank=True)
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="debtor_comments",
+    )
+    author_name = models.CharField(max_length=255, blank=True)
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["tenant_id", "contact_id"])]
+
+    def __str__(self):
+        return f"{self.contact_name or self.contact_id}: {self.text[:40]}"
 
 
 class InvoiceComment(models.Model):

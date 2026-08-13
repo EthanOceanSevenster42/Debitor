@@ -75,6 +75,8 @@ MIDDLEWARE = [
     # Mirror the persisted Xero connection into each logged-in session so users
     # never have to re-"Connect to Xero" after logout / token expiry.
     'xero_app.middleware.XeroConnectionMiddleware',
+    # Records every authenticated data-changing request to the Audit Log.
+    'accounts.audit.AuditLogMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

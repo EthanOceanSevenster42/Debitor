@@ -12,8 +12,123 @@ from xero_app.mailer import send_app_email
 from .decorators import super_admin_required
 from .forms import (AdminSetPasswordForm, UserCreateForm, UserEditForm,
                     UserInviteForm)
-from .models import Role, User
+from .models import AuditLog, Role, User
 from .tokens import invite_token_generator
+
+
+# ---------------------------------------------------------------------------
+# Audit log (Super Admin only)
+# ---------------------------------------------------------------------------
+
+@super_admin_required
+def audit_log(request):
+    """The Audit Log page: every data change (add / edit / delete), sign-in,
+    sign-out and failed sign-in attempt, newest first. Super Admins only.
+    Built for large volumes (thousands of rows): indexed filters (event type,
+    user, date range), free-text search, and 100-per-page pagination with
+    first/last jumps."""
+    import json as _json
+    from datetime import date
+
+    from django.core.paginator import Paginator
+
+    qs = AuditLog.objects.select_related('user')
+
+    selected_action = (request.GET.get('action') or '').strip()
+    if selected_action in dict(AuditLog.ACTION_CHOICES):
+        qs = qs.filter(action=selected_action)
+    selected_user = (request.GET.get('user') or '').strip()
+    if selected_user.isdigit():
+        qs = qs.filter(user_id=int(selected_user))
+
+    def _parse_date(name):
+        raw = (request.GET.get(name) or '').strip()
+        try:
+            return date.fromisoformat(raw) if raw else None
+        except ValueError:
+            return None
+
+    date_from = _parse_date('from')
+    date_to = _parse_date('to')
+    if date_from:
+        qs = qs.filter(created_at__date__gte=date_from)
+    if date_to:
+        qs = qs.filter(created_at__date__lte=date_to)
+
+    q = (request.GET.get('q') or '').strip()
+    if q:
+        qs = qs.filter(Q(user_label__icontains=q) | Q(label__icontains=q) |
+                       Q(path__icontains=q) | Q(params_json__icontains=q))
+
+    page = Paginator(qs, 100).get_page(request.GET.get('page'))
+
+    from datetime import timedelta
+
+    from django.utils import timezone as tz
+    from django.utils.html import format_html
+
+    from .audit import humanize_entry
+
+    user_names = {u.id: (u.get_full_name() or u.email)
+                  for u in User.objects.all()}
+    today = tz.localdate()
+    day_groups = []
+    for entry in page:
+        try:
+            params = _json.loads(entry.params_json) if entry.params_json else {}
+        except ValueError:
+            params = {}
+        # Raw payload kept as a hover tooltip for forensics.
+        entry.params_pretty = ', '.join(
+            f"{k}={v}" for k, v in params.items() if k != 'next')[:220]
+
+        local = tz.localtime(entry.created_at)
+        entry.time_label = local.strftime('%H:%M')
+        # The person and the action are shown in separate columns.
+        entry.actor_name = ((entry.user.get_full_name() if entry.user_id and entry.user else '')
+                            or entry.user_label or '—')
+        if entry.action == AuditLog.ACTION_CHANGE:
+            raw = entry.label or entry.url_name or 'made a change'
+            verb = raw[:1].lower() + raw[1:]
+            entry.line = humanize_entry(entry.url_name, verb, params, user_names)
+        elif entry.action == AuditLog.ACTION_LOGIN:
+            entry.line = 'Signed in'
+        elif entry.action == AuditLog.ACTION_LOGOUT:
+            entry.line = 'Signed out'
+        else:
+            entry.line = 'Failed sign-in attempt'
+
+        d = local.date()
+        if not day_groups or day_groups[-1]['date'] != d:
+            if d == today:
+                day_label = 'Today — ' + local.strftime('%A %d %B')
+            elif d == today - timedelta(days=1):
+                day_label = 'Yesterday — ' + local.strftime('%A %d %B')
+            elif d.year == today.year:
+                day_label = local.strftime('%A %d %B')
+            else:
+                day_label = local.strftime('%A %d %B %Y')
+            day_groups.append({'date': d, 'label': day_label, 'entries': []})
+        day_groups[-1]['entries'].append(entry)
+
+    # Filter querystring (minus page) so pager links keep every filter.
+    keep = request.GET.copy()
+    keep.pop('page', None)
+    filter_qs = keep.urlencode()
+
+    return render(request, 'accounts/audit_log.html', {
+        'page': page,
+        'day_groups': day_groups,
+        'action_choices': AuditLog.ACTION_CHOICES,
+        'selected_action': selected_action,
+        'selected_user': selected_user,
+        'date_from': request.GET.get('from', ''),
+        'date_to': request.GET.get('to', ''),
+        'q': q,
+        'users': User.objects.order_by('first_name', 'email'),
+        'total': page.paginator.count,
+        'filter_qs': filter_qs,
+    })
 
 
 # ---------------------------------------------------------------------------

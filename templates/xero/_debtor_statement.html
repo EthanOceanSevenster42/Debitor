@@ -91,6 +91,29 @@ current_full_path.
 </div>
 <div class="contact-panel" id="contact-{{ d.index }}" style="display:none;"></div>
 {% endif %}
+
+{# Per-debtor mini chat — the same thread on Debtors Action / Handover / Write-offs. #}
+<div class="dc-box" onclick="event.stopPropagation();">
+    <div class="dc-title">&#128172; Debtor comments</div>
+    <div class="dc-list">
+        {% for c in debtor_comments %}
+        <div class="dc-msg">
+            <div class="dc-meta"><strong>{{ c.author_name|default:"&mdash;" }}</strong> &middot; {{ c.created_at|date:"Y-m-d H:i" }}</div>
+            <div class="dc-text">{{ c.text|linebreaksbr }}</div>
+        </div>
+        {% empty %}
+        <div class="dc-empty muted">No comments on this debtor yet.</div>
+        {% endfor %}
+    </div>
+    {% if can_collect %}
+    <form class="dc-form" onsubmit="return submitDebtorComment(event, this);">
+        <input type="hidden" name="contact_id" value="{{ d.cid }}">
+        <input type="hidden" name="contact_name" value="{{ d.name }}">
+        <textarea name="text" rows="2" placeholder="Write a note for the team about {{ d.name }}&hellip;" required></textarea>
+        <button type="submit" class="btn btn-primary btn-sm">Post</button>
+    </form>
+    {% endif %}
+</div>
 <table class="statement">
     <thead>
         <tr>
@@ -126,6 +149,20 @@ current_full_path.
                     <span class="ho-badge marked" title="Manually marked for handover by an administrator">&#9889; Marked</span>
                     {% else %}
                     <span class="ho-badge auto" title="Auto-listed because it has aged past this debtor's handover threshold">&#8987; Auto-listed</span>
+                    {% endif %}
+                {% endif %}
+                {% if write_off_page %}
+                    {% if can_manage %}
+                    <label class="cn-toggle" onclick="event.stopPropagation();"
+                           title="Tick once the matching credit note has been issued in Xero">
+                        <input type="checkbox" {% if inv.credit_note_issued %}checked{% endif %}
+                               onchange="toggleCreditNote(this, '{{ inv.invoice_id }}', '{{ inv.number|escapejs }}');">
+                        Issue Credit Note
+                    </label>
+                    {% elif inv.credit_note_issued %}
+                    <span class="cn-badge yes" title="The matching credit note has been issued in Xero">&#10003; Credit Note Issued</span>
+                    {% else %}
+                    <span class="cn-badge no" title="Credit note not yet issued">Credit Note pending</span>
                     {% endif %}
                 {% endif %}
                 {# Missed markers spell out which channel was not actioned in time. #}

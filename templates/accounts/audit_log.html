@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block title %}Audit Log - FSA Debtor System{% endblock %}
+
+{% block extra_head %}
+<style>
+    .al-filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin: 0 0 16px; }
+    .al-field { display: flex; flex-direction: column; gap: 4px; }
+    .al-field > span { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #64748b; }
+    .al-field input, .al-field select { height: 36px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; background: #fff; box-sizing: border-box; color: #1f2937; }
+    .al-field input[type="text"] { width: 240px; }
+    .al-field select { min-width: 150px; }
+    .al-actions { display: flex; gap: 8px; align-items: center; }
+    .al-actions .btn { height: 36px; display: inline-flex; align-items: center; }
+    /* Timeline: a date header per day, one plain-English sentence per event. */
+    .al-day { display: inline-block; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #0E7C7B; background: #f0f7f7; border: 1px solid #d6efee; border-radius: 8px; padding: 5px 12px; margin: 18px 0 6px; }
+    .al-row { display: flex; align-items: baseline; gap: 10px; padding: 7px 6px; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; }
+    .al-row:hover { background: #f8fafb; }
+    .al-time { color: #94a3b8; font-size: 12px; width: 42px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .al-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; align-self: center; }
+    .al-dot.change { background: #3730a3; }
+    .al-dot.login { background: #10b981; }
+    .al-dot.logout { background: #cbd5e1; }
+    .al-dot.login_failed { background: #ef4444; }
+    .al-who { width: 175px; flex-shrink: 0; font-weight: 700; color: var(--navy, #1e293b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .al-line { flex: 1; color: #1f2937; min-width: 0; }
+    .al-line::first-letter { text-transform: uppercase; }
+    .al-row.login .al-line, .al-row.logout .al-line { color: #64748b; }
+    .al-row.login_failed .al-line { color: #b91c1c; }
+    .al-line strong { font-weight: 700; color: var(--navy, #1e293b); }
+    .al-quote { color: #64748b; font-style: italic; }
+    .al-pager { display: flex; gap: 10px; align-items: center; margin-top: 16px; font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-card">
+    <div class="flex-between">
+        <h1 class="page-title">Audit Log</h1>
+    </div>
+    <p class="page-subtitle">{{ total }} event{{ total|pluralize }} — every data change, sign-in, sign-out and failed sign-in attempt. Newest first.</p>
+
+    <form method="get" class="al-filters">
+        <label class="al-field"><span>Search</span>
+            <input type="text" name="q" value="{{ q }}" placeholder="User, action, detail&hellip;"></label>
+        <label class="al-field"><span>Event</span>
+            <select name="action">
+                <option value="">All events</option>
+                {% for value, label in action_choices %}
+                <option value="{{ value }}" {% if value == selected_action %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select></label>
+        <label class="al-field"><span>User</span>
+            <select name="user">
+                <option value="">All users</option>
+                {% for u in users %}
+                <option value="{{ u.id }}" {% if selected_user == u.id|stringformat:"s" %}selected{% endif %}>{{ u.get_full_name|default:u.email }}</option>
+                {% endfor %}
+            </select></label>
+        <label class="al-field"><span>From</span>
+            <input type="date" name="from" value="{{ date_from }}"></label>
+        <label class="al-field"><span>To</span>
+            <input type="date" name="to" value="{{ date_to }}"></label>
+        <div class="al-actions">
+            <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+            {% if q or selected_action or selected_user or date_from or date_to %}<a class="btn btn-secondary btn-sm" href="{% url 'audit_log' %}">Clear</a>{% endif %}
+        </div>
+    </form>
+
+    {% for day in day_groups %}
+    <div class="al-day">{{ day.label }}</div>
+    {% for e in day.entries %}
+    <div class="al-row {{ e.action }}" {% if e.params_pretty %}title="{{ e.params_pretty }}"{% endif %}>
+        <span class="al-time">{{ e.time_label }}</span>
+        <span class="al-dot {{ e.action }}"></span>
+        <span class="al-who" title="{{ e.actor_name }}">{{ e.actor_name }}</span>
+        <span class="al-line">{{ e.line }}</span>
+    </div>
+    {% endfor %}
+    {% empty %}
+    <p class="muted" style="padding:14px 4px;">No audit events match.</p>
+    {% endfor %}
+
+    {% if page.paginator.num_pages > 1 %}
+    <div class="al-pager">
+        {% if page.has_previous %}
+        <a class="btn btn-secondary btn-sm" href="?{{ filter_qs }}&page=1">&#171; Newest</a>
+        <a class="btn btn-secondary btn-sm" href="?{{ filter_qs }}&page={{ page.previous_page_number }}">&larr; Newer</a>
+        {% endif %}
+        <span class="muted">Page {{ page.number }} of {{ page.paginator.num_pages }} ({{ total }} events)</span>
+        {% if page.has_next %}
+        <a class="btn btn-secondary btn-sm" href="?{{ filter_qs }}&page={{ page.next_page_number }}">Older &rarr;</a>
+        <a class="btn btn-secondary btn-sm" href="?{{ filter_qs }}&page={{ page.paginator.num_pages }}">Oldest &#187;</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

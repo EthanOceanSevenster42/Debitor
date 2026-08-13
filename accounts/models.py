@@ -89,3 +89,45 @@ class User(AbstractUser):
         """An invited user who hasn't accepted yet: inactive with no usable
         password set."""
         return not self.is_active and not self.has_usable_password()
+
+
+class AuditLog(models.Model):
+    """One row per audited event: every data-changing request (adds, edits,
+    deletions — captured by ``accounts.audit.AuditLogMiddleware``) plus
+    sign-ins, sign-outs and failed sign-in attempts (captured by auth
+    signals). Viewed on the Super-Admin-only Audit Log page."""
+    ACTION_CHANGE = 'change'
+    ACTION_LOGIN = 'login'
+    ACTION_LOGOUT = 'logout'
+    ACTION_LOGIN_FAILED = 'login_failed'
+    ACTION_CHOICES = [
+        (ACTION_CHANGE, 'Data change'),
+        (ACTION_LOGIN, 'Signed in'),
+        (ACTION_LOGOUT, 'Signed out'),
+        (ACTION_LOGIN_FAILED, 'Failed sign-in'),
+    ]
+
+    user = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='audit_entries')
+    # Snapshot of who acted, kept even if the user row is later deleted.
+    user_label = models.CharField(max_length=255, blank=True, default='')
+    action = models.CharField(max_length=15, choices=ACTION_CHOICES,
+                              default=ACTION_CHANGE, db_index=True)
+    # Human label of what happened ("Wrote off an invoice") — from the URL-name
+    # map in accounts.audit; falls back to the raw URL name.
+    label = models.CharField(max_length=120, blank=True, default='')
+    url_name = models.CharField(max_length=80, blank=True, default='')
+    method = models.CharField(max_length=8, blank=True, default='')
+    path = models.CharField(max_length=255, blank=True, default='')
+    # Sanitised POST payload (no passwords/CSRF, values truncated), as JSON.
+    params_json = models.TextField(blank=True, default='')
+    status_code = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['user', 'created_at'])]
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} {self.user_label}: {self.label or self.action}"

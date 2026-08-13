@@ -42,6 +42,7 @@
                 {% endif %}
                 {% if user.is_super_admin %}
                 <a href="{% url 'user_list' %}" class="{% if 'user' in request.resolver_match.url_name %}active{% endif %}">Users</a>
+                <a href="{% url 'audit_log' %}" class="{% if request.resolver_match.url_name == 'audit_log' %}active{% endif %}">Audit Log</a>
                 <a href="{% url 'xero_schedule' %}" class="{% if request.resolver_match.url_name == 'xero_schedule' %}active{% endif %}">Schedule</a>
                 <a href="{% url 'xero_lawyer_report' %}" class="{% if 'lawyer_report' in request.resolver_match.url_name %}active{% endif %}">Lawyer Report</a>
                 <a href="{% url 'xero_manual' %}" class="{% if request.resolver_match.url_name == 'xero_manual' %}active{% endif %}">Manual</a>

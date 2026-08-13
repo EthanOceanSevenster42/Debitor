@@ -30,6 +30,7 @@ from .models import (XeroConnection, OpenInvoiceSnapshot, SyncRun, SyncSchedule,
                      EmailTemplate, MessageTemplate, SystemSetting, HandoverSetting,
                      LegalMatter, LegalStep, LegalStepComment, LegalStepCommentAttachment,
                      RecoveredInvoice, LawyerReportConfig, ReportRecipient,
+                     DebtorComment,
                      DEFAULT_WA_TEMPLATE, DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY)
 from . import legal_workflow
 from .xero_client import (fetch_invoice_history, fetch_contact, clean_contact,
@@ -1345,6 +1346,78 @@ def xero_write_off_debtor(request):
 
 @login_required
 @require_POST
+def xero_credit_note_toggle(request):
+    """Tick / untick 'credit note issued' on a written-off invoice (Write-offs
+    page). Super Admins only. The change is logged on the invoice's lifecycle
+    so the trail shows who marked it and when."""
+    tenant_id = _current_tenant_id(request)
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if not tenant_id:
+        return JsonResponse({"error": "Not connected to Xero."}, status=400) if is_ajax else redirect("xero_login")
+    if not _can_manage(request.user):
+        if is_ajax:
+            return JsonResponse({"error": "Only a Super Admin can mark a credit note as issued."}, status=403)
+        messages.error(request, "Only a Super Admin can mark a credit note as issued.")
+        return redirect(request.POST.get("next") or "xero_write_offs")
+    invoice_id = (request.POST.get("invoice_id") or "").strip()
+    row = WriteOffInvoice.objects.filter(tenant_id=tenant_id, invoice_id=invoice_id).first()
+    if not row:
+        if is_ajax:
+            return JsonResponse({"error": "That invoice is not written off."}, status=404)
+        messages.error(request, "That invoice is not written off.")
+        return redirect(request.POST.get("next") or "xero_write_offs")
+    row.credit_note_issued = not row.credit_note_issued
+    row.credit_note_by = request.user.email if row.credit_note_issued else ""
+    row.credit_note_at = timezone.now() if row.credit_note_issued else None
+    row.save(update_fields=["credit_note_issued", "credit_note_by", "credit_note_at"])
+    InvoiceComment.objects.create(
+        tenant_id=tenant_id, invoice_id=invoice_id, author=request.user,
+        author_name=request.user.get_full_name() or request.user.email,
+        comment_at=timezone.now(),
+        text=("Credit note issued" if row.credit_note_issued
+              else "Credit note mark removed"),
+    )
+    if is_ajax:
+        return JsonResponse({"ok": True, "issued": row.credit_note_issued})
+    return redirect(request.POST.get("next") or "xero_write_offs")
+
+
+@login_required
+@require_POST
+def xero_debtor_comment_add(request):
+    """Add a comment to the per-debtor mini chat (shown in the debtor's
+    expanded statement on the Debtors Action / Handover / Write-off pages).
+    A collections action: administrators and super admins."""
+    tenant_id = _current_tenant_id(request)
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if not tenant_id:
+        return JsonResponse({"error": "Not connected to Xero."}, status=400) if is_ajax else redirect("xero_login")
+    if not _can_collect(request.user):
+        if is_ajax:
+            return JsonResponse({"error": "Not permitted."}, status=403)
+        messages.error(request, "Not permitted.")
+        return redirect(request.POST.get("next") or "xero_aging_report")
+    contact_id = (request.POST.get("contact_id") or "").strip()
+    contact_name = (request.POST.get("contact_name") or "").strip()
+    text = (request.POST.get("text") or "").strip()
+    if not contact_id or not text:
+        if is_ajax:
+            return JsonResponse({"error": "Comment text is required."}, status=400)
+        messages.error(request, "Comment text is required.")
+        return redirect(request.POST.get("next") or "xero_aging_report")
+    DebtorComment.objects.create(
+        tenant_id=tenant_id, contact_id=contact_id, contact_name=contact_name,
+        author=request.user,
+        author_name=request.user.get_full_name() or request.user.email,
+        text=text[:2000],
+    )
+    if is_ajax:
+        return JsonResponse({"ok": True})
+    return redirect(request.POST.get("next") or "xero_aging_report")
+
+
+@login_required
+@require_POST
 def xero_unwrite_off_invoice(request):
     """Reverse a write-off (moves the invoice back to the Debtors Action page).
     Always logs the reversal as a comment so the lifecycle shows the round trip."""
@@ -2250,6 +2323,10 @@ def xero_debtor_statement(request):
     written_off_ids = set(
         WriteOffInvoice.objects.filter(tenant_id=tenant_id).values_list("invoice_id", flat=True)
     )
+    # Credit-note tick state for the Write-offs page rows.
+    credit_note_map = dict(
+        WriteOffInvoice.objects.filter(tenant_id=tenant_id)
+        .values_list("invoice_id", "credit_note_issued")) if write_off_page else {}
     handover_rows = {h.invoice_id: h
                      for h in HandoverInvoice.objects.filter(tenant_id=tenant_id)}
     handover_threshold_map = _handover_threshold_map(tenant_id)
@@ -2364,6 +2441,8 @@ def xero_debtor_statement(request):
             # Handover state: marked = manually added; auto = aged past threshold.
             "handover_marked": bool(h_row),
             "handover_auto": is_auto_handover and not bool(h_row),
+            # Write-offs page: whether the matching Xero credit note is issued.
+            "credit_note_issued": credit_note_map.get(iid, False),
         })
 
     # Best mobile (or fallback) phone for the WhatsApp button. Reads only from
@@ -2423,6 +2502,9 @@ def xero_debtor_statement(request):
     setting_key = contact_id or cid
     hs = HandoverSetting.objects.filter(tenant_id=tenant_id, contact_id=setting_key).first()
     legal = LegalMatter.objects.filter(tenant_id=tenant_id, contact_id=setting_key).first()
+    # The per-debtor mini chat — same thread on every page this debtor shows on.
+    debtor_comments = list(DebtorComment.objects.filter(
+        tenant_id=tenant_id, contact_id=setting_key))
     d = {"cid": cid, "contact_id": contact_id, "name": contact_name or cid,
          "index": index, "invoices": invoices,
          "handover_auto": hs.auto_handover if hs else True,
@@ -2438,6 +2520,7 @@ def xero_debtor_statement(request):
          "whatsapp_number": whatsapp_number, "email_address": email_address}
     return render(request, "xero/_debtor_statement.html", {
         "d": d,
+        "debtor_comments": debtor_comments,
         "write_off_page": write_off_page,
         "handover_page": handover_page,
         "can_handover_manage": _can_manage(request.user),
