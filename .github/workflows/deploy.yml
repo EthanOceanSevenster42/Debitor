@@ -1,0 +1,14 @@
+name: Deploy
+on:
+  push:
+    branches: [ main ]
+concurrency: { group: deploy-deploy-dms, cancel-in-progress: true }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        run: |
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > key && chmod 600 key
+          ssh -i key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 root@${{ secrets.DEPLOY_HOST }} deploy-dms
+          rm -f key
