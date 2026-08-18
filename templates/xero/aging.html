@@ -23,11 +23,17 @@
     .num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'Consolas', monospace; }
     /* keep numeric headers right-aligned over their values (override the base left-aligned th) */
     .data-table th.num, .data-table td.num { text-align: right; }
+    /* Bucket headers read as one line instead of stacking a word per row. */
+    .data-table th.num { white-space: nowrap; }
+    .data-table th:first-child, .data-table td:first-child { min-width: 270px; }
     .data-table th { vertical-align: bottom; }
     .data-table td { vertical-align: top; }
     .data-table tr.totals td { background: #f0f8f7; font-weight: 700; border-top: 2px solid var(--brand-teal); }
-    .alloc-line { margin-top: 3px; font-size: 12px; }
-    .alloc-label { color: var(--text-muted); font-weight: 600; margin-right: 4px; }
+    /* Project and "Allocated to" sit side by side when there is room, and wrap
+       as a pair when there is not - instead of each claiming its own line. */
+    .debtor-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 14px; margin-top: 3px; padding-left: 22px; }
+    .alloc-line { font-size: 12px; display: flex; align-items: center; gap: 5px; }
+    .alloc-label { color: var(--text-muted); font-weight: 600; white-space: nowrap; }
     .alloc-form { display: inline; }
     .alloc-select { font-size: 12px; padding: 2px 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; max-width: 220px; }
     .alloc-name { font-weight: 600; color: var(--brand-teal); }
@@ -38,7 +44,8 @@
     .alloc-status.error { color: #b91c1c; font-weight: 600; }
     .zero { color: #bbb; }
     .contact { font-weight: 600; }
-    .email { color: #888; font-size: 12px; }
+    .email { color: #888; font-size: 12px; padding-left: 22px; }
+    .proj-line { font-size: 12px; white-space: nowrap; }
     .databox { background: #f5fbfb; border: 1px solid #d6efee; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; }
 
     .debtor-row { cursor: pointer; }
@@ -50,8 +57,8 @@
     .statement tbody > tr.inv-row:nth-child(4n+3):not(:hover) > td { background: #f7fafa; }
     .caret { display: inline-block; width: 14px; color: var(--brand-teal); font-size: 11px; transition: transform 0.15s; }
     .debtor-row.open .caret { transform: rotate(90deg); }
-    .invcount { color: var(--text-muted); font-size: 11px; font-weight: 400; }
-    .call-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fff4e5; color: #b45309; border: 1px solid #f5cd8f; }
+    .invcount { color: var(--text-muted); font-size: 11px; font-weight: 400; white-space: nowrap; }
+    .call-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fff4e5; color: #b45309; border: 1px solid #f5cd8f; white-space: nowrap; }
     .call-badge.sm { padding: 0 5px; margin-left: 4px; }
     .call-now-btn { margin-left: 6px; padding: 1px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fff4e5; color: #b45309; border: 1px solid #f5cd8f; cursor: pointer; }
     .call-now-btn:hover { background: #b45309; color: #fff; }
@@ -127,12 +134,13 @@
     .ho-badge.activated { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
     .ho-badge.marked    { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
     .ho-badge.auto      { background: #f3f4f6; color: #475569; border: 1px solid #d1d5db; }
-    .hd-summary { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .hd-summary { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; white-space: nowrap; }
     .hd-summary.partial { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
     .hd-summary.none { background: #f3f4f6; color: #475569; border-color: #d1d5db; }
-    /* Per-debtor Status column: badges stack vertically and align on the same axis. */
-    .data-table td.status-cell { width: 200px; vertical-align: middle; }
-    .status-cell > span { display: inline-block; margin: 2px 0; margin-left: 0; }
+    /* Per-debtor Status column: badges stack vertically and align on the same axis
+       as the debtor name, rather than floating to the middle of a tall row. */
+    .data-table td.status-cell { width: 200px; vertical-align: top; }
+    .status-cell > span, .status-cell > a { display: block; width: fit-content; margin: 0 0 4px 0; }
     /* Write-off reason modal */
     .wo-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .55); display: none; z-index: 200; align-items: center; justify-content: center; }
     .wo-backdrop.open { display: flex; }
@@ -156,22 +164,43 @@
                        justify-content: start; justify-items: start; align-items: center; gap: 5px 6px; }
         .inv-actions form { width: auto; }
     }
-    .missed-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fee2e2; color: #991b1b; border: 1px solid #f3c2c7; }
+    .missed-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fee2e2; color: #991b1b; border: 1px solid #f3c2c7; white-space: nowrap; }
     .missed-badge.sm { padding: 0 6px; }
     .debtor-search { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
     .report-link { margin-left: 8px; font-size: 11px; font-weight: 600; }
-    .action-cell { text-align: right; white-space: nowrap; }
+    /* Eleven columns will not fit any laptop, so the actions stay pinned to the
+       right edge while the money columns scroll under them. Every row paints an
+       opaque background first, or the scrolling cells would show through. */
+    .action-cell { text-align: right; white-space: normal; vertical-align: top; }
+    .action-cell .debtor-action-btn { margin: 2px 0 2px 4px; }
+    .data-table tbody > tr > td { background: #fff; }
+    .data-table td.action-cell, .data-table th:last-child, .data-table tr.totals > td:last-child {
+        position: sticky;
+        right: 0;
+        z-index: 2;
+        width: 150px;
+        min-width: 150px;
+    }
+    /* The figure everyone is actually reading rides along with the buttons. */
+    .data-table th.total-cell, .data-table td.total-cell {
+        position: sticky;
+        right: 150px;
+        z-index: 2;
+        box-shadow: -7px 0 9px -7px rgba(15, 23, 42, .22);
+    }
+    .data-table th:last-child, .data-table th.total-cell { background: #f9fafb; }
+    .data-table tr.totals > td { background: #f0f8f7; }
     .debtor-action { display: inline; }
     .debtor-action-btn { border: 1px solid; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
     .debtor-action-btn.close { background: var(--brand-red); border-color: var(--brand-red); color: #fff; }
     .debtor-action-btn.close:hover { background: var(--brand-red-dark); border-color: var(--brand-red-dark); }
     .debtor-action-btn.reopen { background: #fff; color: var(--brand-teal); border-color: #b8e0de; }
     .debtor-action-btn.reopen:hover { background: var(--brand-teal); color: #fff; }
-    .debtor-action-btn.report { background: #fff; color: var(--navy); border-color: #cbd5e1; text-decoration: none; display: inline-block; margin-right: 4px; }
+    .debtor-action-btn.report { background: #fff; color: var(--navy); border-color: #cbd5e1; text-decoration: none; display: inline-block; }
     .debtor-action-btn.report:hover { background: var(--navy); color: #fff; text-decoration: none; }
-    .debtor-action-btn.write-off { background: #fff; color: #92400e; border-color: #fcd34d; margin-right: 4px; }
+    .debtor-action-btn.write-off { background: #fff; color: #92400e; border-color: #fcd34d; }
     .debtor-action-btn.write-off:hover { background: #92400e; border-color: #92400e; color: #fff; }
-    .debtor-action-btn.handover { background: #fff; color: #3730a3; border-color: #c7d2fe; margin-right: 4px; }
+    .debtor-action-btn.handover { background: #fff; color: #3730a3; border-color: #c7d2fe; }
     .debtor-action-btn.handover:hover { background: #3730a3; border-color: #3730a3; color: #fff; }
     /* Per-debtor mini chat (inside the expanded statement) */
     .dc-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; max-width: 720px; }
@@ -245,17 +274,19 @@
     .aging-table-wrap > .data-table { min-width: 900px; }
     /* Compact both the debtor table and the expanded invoice statement progressively
        so they need less (often no) sideways scroll on smaller laptops. */
-    @media (max-width: 1440px) {
+    @media (max-width: 1680px) {
         .data-table, .statement { font-size: 13px; }
         .data-table th, .data-table td,
         .statement th, .statement td { padding: 8px 9px; }
         .data-table td.status-cell { width: 168px; }
     }
-    @media (max-width: 1280px) {
+    @media (max-width: 1520px) {
         .data-table, .statement { font-size: 12.5px; }
         .data-table th, .data-table td,
         .statement th, .statement td { padding: 6px 7px; }
         .data-table td.status-cell { width: auto; }
+    }
+    @media (max-width: 1280px) {
         .summary { grid-template-columns: repeat(4, 1fr); }
         .debtor-search { flex-wrap: wrap; }
     }
@@ -920,7 +951,7 @@ document.addEventListener('click', function (e) {
                 {% for label in bucket_labels %}
                 <th class="num">{{ label }}</th>
                 {% endfor %}
-                <th class="num">Total Outstanding</th>
+                <th class="num total-cell">Total Outstanding</th>
                 <th></th>
             </tr>
         </thead>
@@ -931,9 +962,10 @@ document.addEventListener('click', function (e) {
                     <div class="contact"><span class="caret">&#9654;</span> {{ d.name }}
                         <span class="invcount">({{ d.invoice_count }} invoice{{ d.invoice_count|pluralize }})</span>
                     </div>
-                    {% if d.email %}<div class="email" style="padding-left:22px;">{{ d.email }}</div>{% endif %}
-                    {% if d.project_code %}<div class="proj-line" style="padding-left:22px;"><span class="alloc-label">Project:</span> {{ d.project_code }}</div>{% endif %}
-                    <div class="alloc-line" style="padding-left:22px;" onclick="event.stopPropagation();">
+                    {% if d.email %}<div class="email">{{ d.email }}</div>{% endif %}
+                    <div class="debtor-meta">
+                    {% if d.project_code %}<div class="proj-line"><span class="alloc-label">Project:</span> {{ d.project_code }}</div>{% endif %}
+                    <div class="alloc-line" onclick="event.stopPropagation();">
                         <span class="alloc-label">Allocated to:</span>
                         {% if can_allocate %}
                         <form method="post" action="{% url 'xero_allocate_debtor' %}" class="alloc-form">
@@ -952,6 +984,7 @@ document.addEventListener('click', function (e) {
                         {% else %}
                         <span class="alloc-name {% if not d.allocated_to_name %}unalloc{% endif %}">{{ d.allocated_to_name|default:"Unallocated" }}</span>
                         {% endif %}
+                    </div>
                     </div>
                 </td>
                 <td class="status-cell">
@@ -975,7 +1008,7 @@ document.addEventListener('click', function (e) {
                     {% if cell.amount %}R&nbsp;{{ cell.amount|floatformat:2|intcomma }}{% else %}&mdash;{% endif %}
                 </td>
                 {% endfor %}
-                <td class="num"><strong>R&nbsp;{{ d.total|floatformat:2|intcomma }}</strong></td>
+                <td class="num total-cell"><strong>R&nbsp;{{ d.total|floatformat:2|intcomma }}</strong></td>
                 <td class="action-cell">
                     <a class="debtor-action-btn report" href="{% url 'xero_company_report' %}?cid={{ d.cid|urlencode }}"
                        target="_blank" rel="noopener" onclick="event.stopPropagation();">&#128196; Report</a>
@@ -1019,7 +1052,7 @@ document.addEventListener('click', function (e) {
                 {% for amt in column_total_list %}
                 <td class="num">R&nbsp;{{ amt|floatformat:2|intcomma }}</td>
                 {% endfor %}
-                <td class="num">R&nbsp;{{ displayed_total|floatformat:2|intcomma }}</td>
+                <td class="num total-cell">R&nbsp;{{ displayed_total|floatformat:2|intcomma }}</td>
                 <td></td>
             </tr>
         </tbody>

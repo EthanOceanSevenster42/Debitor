@@ -3,39 +3,59 @@
 {% block title %}Lawyers - FSA Debtor System{% endblock %}
 {% block extra_head %}
 <style>
-    .lm-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(15,23,42,.05); }
-    .lm-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .lm-name { font-size: 16px; font-weight: 700; color: var(--navy); }
+    .lm-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 15px 18px 14px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(15,23,42,.05); }
+    .lm-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+    .lm-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .lm-name { font-size: 16.5px; font-weight: 700; color: var(--navy); }
     .lm-status { padding: 2px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 700; }
     .lm-status.pending { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
     .lm-status.active { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
     .lm-status.closed { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-    .lm-owed { padding: 2px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 700; background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
-    .lm-owed.zero { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
-    .lm-meta { color: #6b7280; font-size: 12px; margin-top: 6px; }
-    .lm-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-    .lm-progress { margin-top: 10px; }
-    .lm-bar { height: 8px; background: #eef2f7; border-radius: 5px; overflow: hidden; max-width: 320px; }
-    .lm-bar > span { display: block; height: 100%; background: var(--brand-teal, #0E7C7B); }
-    .lm-track { font-size: 12px; color: #475569; margin-top: 4px; }
+    .lm-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    /* Labelled facts instead of a row of same-looking pills. */
+    .lm-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 20px; margin: 12px 0 2px; }
+    .lm-fact { min-width: 0; }
+    .lm-fact.wide { grid-column: span 2; }
+    .lm-fact-k { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; color: #94a3b8; font-weight: 700; margin-bottom: 3px; }
+    .lm-fact-v { font-size: 15px; font-weight: 700; color: var(--navy); line-height: 1.2; }
+    .lm-fact-v.zero { color: #94a3b8; }
+    .lm-fact-sub { font-size: 11.5px; font-weight: 600; color: #64748b; margin-left: 6px; }
+    .lm-bar { height: 6px; background: #eef2f7; border-radius: 4px; overflow: hidden; margin-top: 6px; max-width: 260px; }
+    .lm-bar > span { display: block; height: 100%; background: var(--brand-teal, #0E7C7B); border-radius: 4px; }
+    .lm-rt { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+    .rt-chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; white-space: nowrap; }
+    .rt-chip.opp { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+    /* Provenance line, one labelled chip per lifecycle event. */
+    .lm-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: #6b7280; font-size: 11.5px; margin-top: 10px; padding-top: 9px; border-top: 1px solid #f1f5f9; }
+    .mt-k { font-weight: 700; color: #94a3b8; text-transform: uppercase; font-size: 9.5px; letter-spacing: .4px; margin-right: 3px; }
     .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin: 18px 0 8px; }
-    .lk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 8px 0 18px; }
-    .lk-tile { background: #f5fbfb; border: 1px solid #d6efee; border-radius: 10px; padding: 14px 16px; }
-    .lk-tile .lk-label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #5a8a8a; }
-    .lk-tile .lk-value { font-size: 22px; font-weight: 700; color: var(--navy); margin-top: 4px; }
-    .lk-tile .lk-hint { font-size: 10.5px; color: #9ca3af; margin-top: 3px; }
+    .lk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr)); gap: 8px; margin: 6px 0 14px; }
+    .lk-tile { background: #f5fbfb; border: 1px solid #d6efee; border-radius: 8px; padding: 8px 10px; }
+    .lk-tile .lk-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: #5a8a8a; font-weight: 700; line-height: 1.25; }
+    .lk-tile .lk-value { font-size: 17px; font-weight: 700; color: var(--navy); margin-top: 2px; line-height: 1.15; }
+    .lk-tile .lk-hint { font-size: 9.5px; color: #9ca3af; margin-top: 2px; line-height: 1.3; }
     .lk-tile.teal { background: var(--brand-teal, #0E7C7B); border-color: var(--brand-teal, #0E7C7B); }
     .lk-tile.teal .lk-label { color: #d6f1f0; } .lk-tile.teal .lk-value { color: #fff; }
     .lk-tile.amber { background: #fff7ed; border-color: #fed7aa; } .lk-tile.amber .lk-label, .lk-tile.amber .lk-value { color: #9a3412; }
     .lk-tile.warn { background: #fef9c3; border-color: #fde68a; } .lk-tile.warn .lk-label, .lk-tile.warn .lk-value { color: #854d0e; }
     .lk-tile.green { background: #ecfdf5; border-color: #a7f3d0; } .lk-tile.green .lk-label, .lk-tile.green .lk-value { color: #047857; }
     .lk-tile.red { background: #fef2f2; border-color: #fecaca; } .lk-tile.red .lk-label, .lk-tile.red .lk-value { color: #b91c1c; }
+    .lk-tile.slate { background: #f1f5f9; border-color: #cbd5e1; } .lk-tile.slate .lk-label, .lk-tile.slate .lk-value { color: #334155; }
+    .sec-total { float: right; font-size: 12px; font-weight: 700; color: #475569; text-transform: none; letter-spacing: 0; }
     /* Stale-matter highlight (no activity for a while) */
-    .lm-card.warn { background: #fffbeb; border-color: #fcd34d; }
-    .lm-card.stale { background: #fef2f2; border-color: #fca5a5; }
+    .lm-card.warn { box-shadow: inset 3px 0 0 #f59e0b, 0 1px 4px rgba(15,23,42,.05); }
+    .lm-card.stale { box-shadow: inset 3px 0 0 #ef4444, 0 1px 4px rgba(15,23,42,.05); }
     .idle-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 12px; }
     .idle-badge.warn { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
     .idle-badge.stale { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    /* "Last action" line - the most recent step the lawyers ticked */
+    .lm-last { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px; padding: 7px 11px; background: #f8fafc; border: 1px solid #e5e7eb; border-left: 3px solid #16a34a; border-radius: 6px; }
+    .lm-last.milestone { border-left-color: var(--brand-teal, #0E7C7B); }
+    .lm-last.none { border-left-color: #cbd5e1; }
+    .lm-last-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; }
+    .lm-last-title { font-size: 13px; font-weight: 600; color: #1f2937; }
+    .lm-last-who { font-size: 11.5px; color: #64748b; }
+    .lm-last-none { font-size: 12.5px; color: #94a3b8; }
     /* Horizontal milestone timeline (always visible) */
     .tlh-label { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; margin: 12px 0 2px; }
     .tlh { display: flex; gap: 0; overflow-x: auto; padding: 14px 0 6px; }
@@ -54,6 +74,12 @@
     .tlh-att { margin-top: 3px; }
     .tlh-att a { font-size: 12px; text-decoration: none; margin-right: 4px; }
     .tlh-who { font-size: 10px; color: #94a3b8; margin-top: 3px; }
+    @media (max-width: 720px) {
+        .lm-head { flex-direction: column; align-items: flex-start; gap: 9px; }
+        .lm-actions { width: 100%; }
+        .lm-facts { grid-template-columns: 1fr 1fr; }
+        .lm-fact.wide { grid-column: span 2; }
+    }
 </style>
 {% endblock %}
 {% block content %}
@@ -66,11 +92,12 @@
 
     {# ---- Lawyer dashboard KPIs ---- #}
     <div class="lk-grid">
-        <div class="lk-tile red"><div class="lk-label">&#9878; Total owed (with lawyers)</div><div class="lk-value">R&nbsp;{{ kpi_owed_active|floatformat:2|intcomma }}</div><div class="lk-hint">across {{ kpi_active }} active matter{{ kpi_active|pluralize }}{% if kpi_owed_pending %} &middot; pending approval R {{ kpi_owed_pending|floatformat:2|intcomma }}{% endif %}</div></div>
+        <div class="lk-tile red"><div class="lk-label">&#9878; Total owed (with lawyers)</div><div class="lk-value">R&nbsp;{{ kpi_owed_active|floatformat:2|intcomma }}</div><div class="lk-hint">{{ kpi_active }} active matter{{ kpi_active|pluralize }}{% if kpi_owed_pending %} &middot; pending R {{ kpi_owed_pending|floatformat:2|intcomma }}{% endif %}</div></div>
+        <div class="lk-tile slate"><div class="lk-label">&#128230; Total handed over</div><div class="lk-value">R&nbsp;{{ kpi_handed_total|floatformat:2|intcomma }}</div><div class="lk-hint">{{ kpi_handed_clients }} client{{ kpi_handed_clients|pluralize }} &middot; still outstanding today</div></div>
         <div class="lk-tile green"><div class="lk-label">&#128176; Recovered (with lawyers)</div><div class="lk-value">R&nbsp;{{ kpi_recovered_month|floatformat:2|intcomma }}</div><div class="lk-hint">this month &middot; all-time R {{ kpi_recovered_total|floatformat:2|intcomma }}</div></div>
         <div class="lk-tile"><div class="lk-label">Active matters</div><div class="lk-value">{{ kpi_active }}</div></div>
         <div class="lk-tile teal"><div class="lk-label">Avg completion</div><div class="lk-value">{{ kpi_avg_completion }}%</div></div>
-        <div class="lk-tile amber"><div class="lk-label">Not yet in litigation</div><div class="lk-value">{{ kpi_not_in_litigation }}</div><div class="lk-hint">still in collections — no summons/application step done</div></div>
+        <div class="lk-tile amber"><div class="lk-label">Not yet in litigation</div><div class="lk-value">{{ kpi_not_in_litigation }}</div><div class="lk-hint">no summons/application step yet</div></div>
         {% if is_manager %}<div class="lk-tile warn"><div class="lk-label">Pending approval</div><div class="lk-value">{{ pending_count }}</div></div>{% endif %}
         <div class="lk-tile"><div class="lk-label">Closed</div><div class="lk-value">{{ kpi_closed }}</div></div>
     </div>
@@ -84,15 +111,15 @@
     <div class="section-title">
         {% if grp.grouper == 'pending' %}Pending approval{% elif grp.grouper == 'active' %}Active{% else %}Closed{% endif %}
         ({{ grp.list|length }})
+        <span class="sec-total">R&nbsp;{% if grp.grouper == 'pending' %}{{ kpi_owed_pending|floatformat:2|intcomma }}{% elif grp.grouper == 'active' %}{{ kpi_owed_active|floatformat:2|intcomma }}{% else %}{{ kpi_owed_closed|floatformat:2|intcomma }}{% endif %} handed over</span>
     </div>
     {% for m in grp.list %}
     <div class="lm-card {{ m.staleness }}">
         <div class="lm-head">
-            <span class="lm-name">{{ m.contact_name|default:m.contact_id }}</span>
-            <span class="lm-status {{ m.status }}">{{ m.get_status_display }}</span>
-            <span class="lm-owed {% if not m.amount_owed %}zero{% endif %}" title="Total outstanding owed to FSA across all open invoices">Owes R&nbsp;{{ m.amount_owed|floatformat:2|intcomma }}</span>
-            {% if m.staleness == 'stale' %}<span class="idle-badge stale" title="No milestone or comment for {{ m.days_idle }} days">&#9888; No activity {{ m.days_idle }} days</span>
-            {% elif m.staleness == 'warn' %}<span class="idle-badge warn" title="No milestone or comment for {{ m.days_idle }} days">&#9888; No activity {{ m.days_idle }} days</span>{% endif %}
+            <div class="lm-id">
+                <span class="lm-name">{{ m.contact_name|default:m.contact_id }}</span>
+                <span class="lm-status {{ m.status }}">{{ m.get_status_display }}</span>
+            </div>
             <div class="lm-actions">
                 <a class="btn btn-secondary btn-sm" href="{% url 'xero_company_report' %}?cid={{ m.report_cid|urlencode }}" target="_blank" rel="noopener">&#128196; Full company report</a>
                 {% if m.status == 'active' %}
@@ -118,16 +145,56 @@
                 {% endif %}
             </div>
         </div>
-        {% if m.status == 'active' %}
-        <div class="lm-progress">
-            <div class="lm-bar"><span style="width: {% if m.progress_total %}{% widthratio m.progress_done m.progress_total 100 %}{% else %}0{% endif %}%;"></span></div>
-            <div class="lm-track">{{ m.route_summary }} &middot; {{ m.progress_done }}/{{ m.progress_total }} steps done</div>
+
+        {# The numbers that were pills now read as labelled facts. #}
+        <div class="lm-facts">
+            <div class="lm-fact">
+                <div class="lm-fact-k">Owes</div>
+                <div class="lm-fact-v{% if not m.amount_owed %} zero{% endif %}"
+                     title="Total outstanding owed to FSA across all open invoices">R&nbsp;{{ m.amount_owed|floatformat:2|intcomma }}</div>
+            </div>
+            {% if m.status == 'active' %}
+            <div class="lm-fact wide">
+                <div class="lm-fact-k">Workflow progress</div>
+                <div class="lm-fact-v">{% if m.progress_total %}{% widthratio m.progress_done m.progress_total 100 %}{% else %}0{% endif %}%
+                    <span class="lm-fact-sub">{{ m.progress_done }} of {{ m.progress_total }} steps done</span>
+                </div>
+                <div class="lm-bar"><span style="width: {% if m.progress_total %}{% widthratio m.progress_done m.progress_total 100 %}{% else %}0{% endif %}%;"></span></div>
+            </div>
+            <div class="lm-fact wide">
+                <div class="lm-fact-k">Litigation route</div>
+                <div class="lm-rt">
+                    <span class="rt-chip{% if m.summons_opposed %} opp{% endif %}">Summons: {% if m.summons_opposed %}Opposed{% else %}Unopposed{% endif %}</span>
+                    <span class="rt-chip{% if m.application_opposed %} opp{% endif %}">Application: {% if m.application_opposed %}Opposed{% else %}Unopposed{% endif %}</span>
+                </div>
+            </div>
+            {% endif %}
+            {% if m.staleness %}
+            <div class="lm-fact">
+                <div class="lm-fact-k">Activity</div>
+                <span class="idle-badge {{ m.staleness }}" title="No milestone or comment for {{ m.days_idle }} days">&#9888; None for {{ m.days_idle }} days</span>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
+
+        {# Headline of the timeline below: the newest step the lawyers ticked. #}
+        <div class="lm-last{% if not m.last_action %} none{% elif m.last_action.kind == 'milestone' %} milestone{% endif %}">
+            <span class="lm-last-label">Last action</span>
+            {% if m.last_action %}
+            <span class="lm-last-title">{% if m.last_action.kind == 'step' %}&#10003;{% else %}&#9873;{% endif %} {{ m.last_action.title }}</span>
+            <span class="lm-last-who">{{ m.last_action.who }} &middot; {{ m.last_action.date|date:"M j, Y" }} &middot; {{ m.last_action.date|timesince }} ago</span>
+            {% else %}
+            <span class="lm-last-none">&mdash; no workflow step done yet</span>
+            {% endif %}
+        </div>
+
         <div class="tlh-label">Milestones</div>
         {% include "xero/_legal_timeline.html" with timeline=m.milestones matter=m %}
+
         <div class="lm-meta">
-            Sent by {{ m.sent_by|default:"—" }} {{ m.sent_at|date:"Y-m-d H:i" }}{% if m.approved_by %} &middot; approved by {{ m.approved_by }} {{ m.approved_at|date:"Y-m-d H:i" }}{% endif %}{% if m.status == 'closed' and m.closed_by %} &middot; closed by {{ m.closed_by }} {{ m.closed_at|date:"Y-m-d H:i" }}{% endif %}
+            <span class="mt"><span class="mt-k">Sent</span> {{ m.sent_by|default:"—" }} &middot; {{ m.sent_at|date:"Y-m-d H:i" }}</span>
+            {% if m.approved_by %}<span class="mt"><span class="mt-k">Approved</span> {{ m.approved_by }} &middot; {{ m.approved_at|date:"Y-m-d H:i" }}</span>{% endif %}
+            {% if m.status == 'closed' and m.closed_by %}<span class="mt"><span class="mt-k">Closed</span> {{ m.closed_by }} &middot; {{ m.closed_at|date:"Y-m-d H:i" }}</span>{% endif %}
         </div>
     </div>
     {% endfor %}

@@ -6,60 +6,118 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}FSA Debtor System{% endblock %}</title>
     <link rel="icon" type="image/png" href="{% static 'img/favicon.png' %}">
-    <link rel="stylesheet" href="{% static 'css/app.css' %}?v=9">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}?v=10">
+    {# Sidebar state is applied before first paint so the bar never flashes open. #}
+    <script>
+    (function () {
+        var s;
+        try { s = localStorage.getItem('fsa-sidebar'); } catch (e) {}
+        if (s !== 'open' && s !== 'collapsed') s = window.innerWidth < 900 ? 'collapsed' : 'open';
+        document.documentElement.setAttribute('data-sidebar', s);
+    })();
+    </script>
     {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body{% if user.is_authenticated %} class="has-sidebar"{% endif %}>
     {% if user.is_authenticated %}
+    {% comment %}Phones only - the sidebar is an off-screen drawer there, so it
+    needs a handle that lives outside it.{% endcomment %}
     <nav class="navbar">
         <div class="navbar-top">
-            <a class="navbar-brand" href="{% url 'home' %}">
-                <img class="navbar-logo" src="{% static 'img/fsa-logo.png' %}" alt="FSA">
-                DEBTOR SYSTEM
-            </a>
-            <div class="navbar-links">
-                {% if not user.is_lawyer %}
-                <a href="{% url 'xero_dashboard' %}" class="{% if request.resolver_match.url_name == 'xero_dashboard' %}active{% endif %}">Dashboard</a>
-                <a href="{% url 'xero_aging_report' %}" class="{% if request.resolver_match.url_name == 'xero_aging_report' %}active{% endif %}">Debtors Action Page</a>
-                {% endif %}
-                {% if user.is_super_admin %}
-                <a href="{% url 'xero_closed_debtors' %}" class="{% if request.resolver_match.url_name == 'xero_closed_debtors' %}active{% endif %}">Closed Debtors</a>
-                {% endif %}
-                {% if user.is_super_admin or user.is_administrator %}
-                <a href="{% url 'xero_write_offs' %}" class="{% if request.resolver_match.url_name == 'xero_write_offs' %}active{% endif %}">Write-offs</a>
-                {% endif %}
-                {% if user.is_super_admin %}
-                <a href="{% url 'xero_handover' %}" class="{% if request.resolver_match.url_name == 'xero_handover' or request.resolver_match.url_name == 'xero_handover_overrides' %}active{% endif %}">Handover</a>
-                {% endif %}
-                {% if user.is_super_admin or user.is_administrator or user.is_lawyer %}
-                <a href="{% url 'xero_legal' %}" class="{% if 'legal' in request.resolver_match.url_name %}active{% endif %}">Lawyers</a>
-                {% endif %}
-                {% if user.is_super_admin or user.is_lawyer %}
-                <a href="{% url 'xero_filing' %}" class="{% if 'filing' in request.resolver_match.url_name %}active{% endif %}">Filing</a>
-                {% endif %}
-                {% if user.is_super_admin %}
-                <a href="{% url 'xero_communication_setup' %}" class="{% if request.resolver_match.url_name == 'xero_communication_setup' %}active{% endif %}">Communication Setup</a>
-                {% endif %}
-                {% if user.is_super_admin %}
-                <a href="{% url 'user_list' %}" class="{% if 'user' in request.resolver_match.url_name %}active{% endif %}">Users</a>
-                <a href="{% url 'audit_log' %}" class="{% if request.resolver_match.url_name == 'audit_log' %}active{% endif %}">Audit Log</a>
-                <a href="{% url 'xero_schedule' %}" class="{% if request.resolver_match.url_name == 'xero_schedule' %}active{% endif %}">Schedule</a>
-                <a href="{% url 'xero_lawyer_report' %}" class="{% if 'lawyer_report' in request.resolver_match.url_name %}active{% endif %}">Lawyer Report</a>
-                <a href="{% url 'xero_manual' %}" class="{% if request.resolver_match.url_name == 'xero_manual' %}active{% endif %}">Manual</a>
-                {% endif %}
-            </div>
-            <div class="navbar-right">
-                <span class="navbar-user">{{ user.get_full_name|default:user.email }}</span>
-                <span class="navbar-role">{{ user.get_role_display }}</span>
-                <form method="post" action="{% url 'logout' %}" style="margin:0;">
-                    {% csrf_token %}
-                    <button type="submit" class="navbar-logout">Logout</button>
-                </form>
-            </div>
+            <button type="button" class="navbar-toggle js-sb-toggle"
+                    aria-label="Show or hide the navigation" aria-controls="sidebar" aria-expanded="true">
+                <svg class="sb-ico" aria-hidden="true"><use href="#i-menu"/></svg>
+            </button>
         </div>
     </nav>
+
+    <svg class="sb-sprite" aria-hidden="true" focusable="false" width="0" height="0"><symbol id="i-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></symbol><symbol id="i-debtors" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 11h8M8 16h5"/></symbol><symbol id="i-handover" viewBox="0 0 24 24"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></symbol><symbol id="i-lawyers" viewBox="0 0 24 24"><path d="M12 3v18M7 21h10M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/></symbol><symbol id="i-filing" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol><symbol id="i-report" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M8 13h8M8 17h8M8 9h2"/></symbol><symbol id="i-closed" viewBox="0 0 24 24"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol><symbol id="i-writeoff" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></symbol><symbol id="i-comms" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol><symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol><symbol id="i-audit" viewBox="0 0 24 24"><path d="M15 12h-5M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H10a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2h4"/></symbol><symbol id="i-schedule" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol><symbol id="i-manual" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3Z"/></symbol><symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol><symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol></svg>
+
+    {% comment %}Grouped side navigation. A section renders only when the role
+    can see at least one item inside it, so nobody gets an empty heading.{% endcomment %}
+    <aside class="sidebar" id="sidebar">
+        <div class="sb-head">
+            <a class="sb-brand" href="{% url 'home' %}">
+                <img class="sb-logo" src="{% static 'img/fsa-logo.png' %}" alt="FSA">
+                <span class="sb-brand-text">DEBTOR SYSTEM</span>
+            </a>
+            <button type="button" class="sb-toggle js-sb-toggle"
+                    aria-label="Show or hide the navigation" aria-controls="sidebar" aria-expanded="true">
+                <svg class="sb-ico" aria-hidden="true"><use href="#i-menu"/></svg>
+            </button>
+        </div>
+        <nav class="sb-nav">
+            {% if not user.is_lawyer %}
+            <a href="{% url 'xero_dashboard' %}" title="Dashboard"
+               class="sb-item{% if request.resolver_match.url_name == 'xero_dashboard' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-dashboard"/></svg><span class="sb-label">Dashboard</span></a>
+            <a href="{% url 'xero_aging_report' %}" title="Debtors Action Page"
+               class="sb-item{% if request.resolver_match.url_name == 'xero_aging_report' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-debtors"/></svg><span class="sb-label">Debtors Action Page</span></a>
+            {% endif %}
+
+            {% if user.is_super_admin or user.is_administrator or user.is_lawyer %}
+            <div class="sb-section">Legal</div>
+            {% if user.is_super_admin %}
+            <a href="{% url 'xero_handover' %}" title="Handover"
+               class="sb-item{% if request.resolver_match.url_name == 'xero_handover' or request.resolver_match.url_name == 'xero_handover_overrides' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-handover"/></svg><span class="sb-label">Handover</span></a>
+            {% endif %}
+            <a href="{% url 'xero_legal' %}" title="Lawyers"
+               class="sb-item{% if 'legal' in request.resolver_match.url_name %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-lawyers"/></svg><span class="sb-label">Lawyers</span></a>
+            {% if user.is_super_admin or user.is_lawyer %}
+            <a href="{% url 'xero_filing' %}" title="Filing"
+               class="sb-item{% if 'filing' in request.resolver_match.url_name %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-filing"/></svg><span class="sb-label">Filing</span></a>
+            {% endif %}
+            {% if user.is_super_admin %}
+            <a href="{% url 'xero_lawyer_report' %}" title="Lawyer Report"
+               class="sb-item{% if 'lawyer_report' in request.resolver_match.url_name %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-report"/></svg><span class="sb-label">Lawyer Report</span></a>
+            {% endif %}
+            {% endif %}
+
+            {% if user.is_super_admin or user.is_administrator %}
+            <div class="sb-section">Archive</div>
+            {% if user.is_super_admin %}
+            <a href="{% url 'xero_closed_debtors' %}" title="Closed Debtors"
+               class="sb-item{% if request.resolver_match.url_name == 'xero_closed_debtors' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-closed"/></svg><span class="sb-label">Closed Debtors</span></a>
+            {% endif %}
+            <a href="{% url 'xero_write_offs' %}" title="Write-offs"
+               class="sb-item{% if request.resolver_match.url_name == 'xero_write_offs' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-writeoff"/></svg><span class="sb-label">Write-offs</span></a>
+            {% endif %}
+
+            {% if user.is_super_admin %}
+            <div class="sb-section">Admin</div>
+            <a href="{% url 'xero_communication_setup' %}" title="Communication Setup"
+               class="sb-item{% if request.resolver_match.url_name == 'xero_communication_setup' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-comms"/></svg><span class="sb-label">Communication Setup</span></a>
+            <a href="{% url 'user_list' %}" title="Users"
+               class="sb-item{% if 'user' in request.resolver_match.url_name %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-users"/></svg><span class="sb-label">Users</span></a>
+            <a href="{% url 'audit_log' %}" title="Audit Log"
+               class="sb-item{% if request.resolver_match.url_name == 'audit_log' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-audit"/></svg><span class="sb-label">Audit Log</span></a>
+            <a href="{% url 'xero_schedule' %}" title="Schedule"
+               class="sb-item{% if request.resolver_match.url_name == 'xero_schedule' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-schedule"/></svg><span class="sb-label">Schedule</span></a>
+            <a href="{% url 'xero_manual' %}" title="Manual"
+               class="sb-item{% if request.resolver_match.url_name == 'xero_manual' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-manual"/></svg><span class="sb-label">Manual</span></a>
+            {% endif %}
+        </nav>
+
+        {% comment %}Who you are signed in as, parked at the foot of the bar.{% endcomment %}
+        <div class="sb-foot">
+            <div class="sb-who" title="{{ user.get_full_name|default:user.email }} &mdash; {{ user.get_role_display }}">
+                <span class="sb-avatar">{% if user.first_name %}{{ user.first_name|slice:":1"|upper }}{{ user.last_name|slice:":1"|upper }}{% else %}{{ user.email|slice:":1"|upper }}{% endif %}</span>
+                <span class="sb-label sb-who-text">
+                    <span class="sb-who-name">{{ user.get_full_name|default:user.email }}</span>
+                    <span class="sb-who-role">{{ user.get_role_display }}</span>
+                </span>
+            </div>
+            <form method="post" action="{% url 'logout' %}" style="margin:0;">
+                {% csrf_token %}
+                <button type="submit" class="sb-logout" title="Logout">
+                    <svg class="sb-ico" aria-hidden="true"><use href="#i-logout"/></svg><span class="sb-label">Logout</span>
+                </button>
+            </form>
+        </div>
+    </aside>
+    <div class="sb-backdrop" id="sb-backdrop"></div>
     {% endif %}
 
+    <div class="app-main">
     <div class="{% block container_class %}page-container{% endblock %}">
         {% if messages %}
             {% for message in messages %}
@@ -68,10 +126,70 @@
         {% endif %}
         {% block content %}{% endblock %}
     </div>
+    </div>
     {% block extra_body %}{% endblock %}
 
     {% if user.is_authenticated %}
     <script>window.CSRF_TOKEN = "{{ csrf_token }}";</script>
+    <script src="{% static 'js/motion.min.js' %}"></script>
+    <script>
+    (function () {
+        var root = document.documentElement,
+            btns = document.querySelectorAll('.js-sb-toggle'),
+            backdrop = document.getElementById('sb-backdrop'),
+            sb = document.getElementById('sidebar'),
+            main = document.querySelector('.app-main'),
+            M = window.Motion,
+            OPEN_W = 236, RAIL_W = 60,
+            spring = {type: 'spring', stiffness: 420, damping: 38, mass: 0.9};
+
+        function desktop() { return window.matchMedia('(min-width: 901px)').matches; }
+        function still() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+        // Below the breakpoint the bar is an overlay drawer, so sizing goes back
+        // to the stylesheet and the inline widths are cleared.
+        function paint(state, animate) {
+            if (!sb) return;
+            if (!desktop()) { sb.style.width = ''; if (main) main.style.paddingLeft = ''; return; }
+            var w = (state === 'open' ? OPEN_W : RAIL_W) + 'px';
+            if (M && animate && !still()) {
+                M.animate(sb, {width: w}, spring);
+                if (main) M.animate(main, {paddingLeft: w}, spring);
+            } else {
+                sb.style.width = w;
+                if (main) main.style.paddingLeft = w;
+            }
+        }
+
+        function set(state, animate) {
+            root.setAttribute('data-sidebar', state);
+            try { localStorage.setItem('fsa-sidebar', state); } catch (e) {}
+            Array.prototype.forEach.call(btns, function (b) {
+                b.setAttribute('aria-expanded', state === 'open' ? 'true' : 'false');
+            });
+            paint(state, animate);
+        }
+
+        set(root.getAttribute('data-sidebar') === 'collapsed' ? 'collapsed' : 'open', false);
+
+        Array.prototype.forEach.call(btns, function (b) {
+            b.addEventListener('click', function () {
+                set(root.getAttribute('data-sidebar') === 'open' ? 'collapsed' : 'open', true);
+            });
+        });
+        if (backdrop) backdrop.addEventListener('click', function () { set('collapsed', true); });
+        window.addEventListener('resize', function () {
+            paint(root.getAttribute('data-sidebar'), false);
+        });
+
+        // The items ease in on load instead of snapping into place.
+        if (M && M.animate && !still()) {
+            M.animate('.sidebar .sb-item, .sidebar .sb-section',
+                      {opacity: [0, 1], transform: ['translateX(-8px)', 'translateX(0px)']},
+                      {delay: M.stagger(0.022), duration: 0.32});
+        }
+    })();
+    </script>
     <div id="call-modal" class="modal-overlay" style="display:none;">
         <div class="modal-box">
             <h3 style="margin:0 0 4px;">&#128222; Log call</h3>

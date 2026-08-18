@@ -2115,14 +2115,18 @@ def xero_legal(request):
         m.progress_total = len(visible)
         done_keys = set(m.step_states.filter(done=True).values_list("step_key", flat=True))
         m.progress_done = len([k for k in visible if k in done_keys])
-        m.route_summary = (f"Summons: {'Opposed' if m.summons_opposed else 'Unopposed'} · "
-                           f"Application: {'Opposed' if m.application_opposed else 'Unopposed'}")
         # "Not yet in summons / application for payment" = no litigation step done.
         m.in_litigation = bool(done_keys & litigation_keys)
         full_timeline = _legal_timeline(m)
         # Milestone strip shows only workflow progress (completed steps + lifecycle
         # milestones) — not comments or route clicks; full history is in the report.
         m.milestones = [e for e in full_timeline if e["kind"] in ("step", "milestone")]
+        # "Last action" line on the card: the most recent workflow step the lawyers
+        # ticked. Before any step is done, fall back to the latest lifecycle
+        # milestone so the line still says where the matter stands.
+        steps_done = [e for e in full_timeline if e["kind"] == "step"]
+        m.last_action = steps_done[-1] if steps_done else next(
+            (e for e in reversed(full_timeline) if e["kind"] == "milestone"), None)
         # Staleness still reacts to ANY activity, including new comments.
         last = full_timeline[-1]["date"] if full_timeline else m.sent_at
         m.days_idle = (now - last).days if last else 0
@@ -2145,6 +2149,14 @@ def xero_legal(request):
                            if m.status == LegalMatter.ACTIVE), Decimal(0))
     kpi_owed_pending = sum((m.amount_owed for m in matters
                             if m.status == LegalMatter.PENDING), Decimal(0))
+    kpi_owed_closed = sum((m.amount_owed for m in matters
+                           if m.status == LegalMatter.CLOSED), Decimal(0))
+    # "Total handed over" — every client that has been handed to the lawyers,
+    # whatever stage the matter is at, valued at what they still owe today. The
+    # per-client figure is the "Owes" badge on each card, so the two reconcile.
+    # Lawyers only see active matters, so their total covers only those.
+    kpi_handed_total = kpi_owed_active + kpi_owed_pending + kpi_owed_closed
+    kpi_handed_clients = len(matters)
 
     # Money the lawyers have recovered (invoices paid off on approved matters) — a
     # team total, since matters aren't assigned to individual attorneys.
@@ -2172,6 +2184,9 @@ def xero_legal(request):
         "kpi_recovered_total": kpi_recovered_total,
         "kpi_owed_active": kpi_owed_active,
         "kpi_owed_pending": kpi_owed_pending,
+        "kpi_owed_closed": kpi_owed_closed,
+        "kpi_handed_total": kpi_handed_total,
+        "kpi_handed_clients": kpi_handed_clients,
     })
 
 

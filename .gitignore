@@ -35,3 +35,9 @@ Thumbs.db
 
 # Node (only if a JS toolchain is ever added)
 node_modules/
+
+# Local env backups (contain real secrets)
+.env.bak*
+
+# Playwright MCP scratch output (screenshots, console logs)
+.playwright-mcp/

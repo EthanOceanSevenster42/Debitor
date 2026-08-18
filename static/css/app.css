@@ -19,6 +19,9 @@
   --error-text: #991b1b;
   --info-bg: #dbeafe;
   --info-text: #1e40af;
+  --navbar-h: 56px;
+  --sidebar-w: 236px;
+  --sidebar-rail: 60px;
 }
 
 * { box-sizing: border-box; }
@@ -35,8 +38,9 @@ body {
 a { color: var(--brand-teal); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* ---------- Navbar ---------- */
+/* ---------- Top bar (phones only - see the media query below) ---------- */
 .navbar {
+  display: none;
   background: var(--navy);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
   position: sticky;
@@ -46,98 +50,228 @@ a:hover { text-decoration: underline; }
 .navbar-top {
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  height: 60px;
+  padding: 0 12px;
+  height: var(--navbar-h);
   gap: 12px;
 }
-.navbar-brand {
+
+/* Hamburger toggle — opens and closes the side navigation. */
+.navbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  border: 0;
+  border-radius: 8px;
+  line-height: 0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.navbar-toggle:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.navbar-toggle .sb-ico { width: 20px; height: 20px; flex: 0 0 20px; }
+.sb-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.sb-ico {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Side navigation ---------- */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-w);
+  background: #16202f;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 90;
+  padding: 8px 0 0;
+  transition: width 0.18s ease, transform 0.18s ease;
+}
+.sb-head {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  font-size: 15px;
-  font-weight: 800;
-  color: #fff;
-  letter-spacing: 0.5px;
-  flex-shrink: 0;
+  gap: 8px;
+  padding: 11px 12px 10px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
-.navbar-brand:hover { text-decoration: none; }
-.navbar-logo { height: 32px; width: auto; margin-right: 8px; }
-.navbar-links {
+.sb-brand {
   display: flex;
-  gap: 2px;
-  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;            /* hide the scrollbar (Firefox) */
-}
-.navbar-links::-webkit-scrollbar { display: none; }   /* hide (Chrome/Safari) */
-.navbar-links a {
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 8px;
-  border-radius: 6px;
-  white-space: nowrap;              /* never wrap a label onto two lines */
-  flex-shrink: 0;                   /* keep full size; the bar scrolls instead */
-  transition: background 0.2s, color 0.2s;
-}
-.navbar-links a:hover { background: rgba(255, 255, 255, 0.15); color: #fff; text-decoration: none; }
-.navbar-links a.active { background: rgba(255, 255, 255, 0.2); color: #fff; }
-.navbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.navbar-user { color: #fff; font-size: 12px; font-weight: 600; }
-.navbar-role {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.15);
-  padding: 3px 10px;
-  border-radius: 12px;
-  text-transform: uppercase;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 800;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
-.navbar-logout {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
+.sb-brand:hover { color: #fff; text-decoration: none; }
+.sb-logo { height: 28px; width: auto; flex: 0 0 auto; }
+.sb-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sb-toggle:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.sb-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.sb-section {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.35);
+  padding: 14px 18px 5px;
+  white-space: nowrap;
+}
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 0 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
 }
-.navbar-logout:hover { background: rgba(255, 255, 255, 0.28); }
+.sb-item:hover { background: rgba(255, 255, 255, 0.09); color: #fff; text-decoration: none; }
+.sb-item.active { background: var(--brand-teal); color: #fff; }
+.sb-icon { flex: 0 0 20px; width: 20px; text-align: center; font-size: 14px; }
+.sb-label { overflow: hidden; text-overflow: ellipsis; transition: opacity 0.14s ease; }
+.sb-backdrop { display: none; }
 
-/* Hamburger toggle — hidden on wide screens, shown when the nav collapses. */
-.navbar-toggle {
-  display: none;
-  background: rgba(255, 255, 255, 0.15);
+/* Signed-in-as block, pinned to the foot of the bar. */
+.sb-foot {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sb-who { display: flex; align-items: center; gap: 11px; padding: 4px 10px 8px; }
+.sb-avatar {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand-teal);
   color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  font-size: 20px;
-  line-height: 1;
-  padding: 5px 12px;
-  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.3px;
 }
-.navbar-toggle:hover { background: rgba(255, 255, 255, 0.28); }
+.sb-who-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.sb-who-name { color: #fff; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.sb-who-role { color: rgba(255, 255, 255, 0.45); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+.sb-logout {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sb-logout:hover { background: rgba(220, 53, 69, 0.9); color: #fff; }
 
-/* Phones: reclaim space by dropping the role chip and truncating a long name.
-   The bar wraps — brand + user/logout share the top row(s), and the nav links
-   become a full-width scrolling row underneath — so nothing pushes the page
-   wider than the screen. */
-@media (max-width: 560px) {
-  .navbar-top { padding: 10px 14px; flex-wrap: wrap; row-gap: 6px; height: auto; min-height: 52px; }
-  .navbar-role { display: none; }
-  .navbar-user { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .navbar-brand { margin-right: auto; }
-  .navbar-links { order: 3; flex-basis: 100%; }
+/* The page is pushed clear of the bar; auth screens have no sidebar at all. */
+.app-main { transition: padding-left 0.18s ease; }
+body.has-sidebar .app-main { padding-left: var(--sidebar-w); }
+
+/* Collapsed = a narrow icon rail. Still navigable, labels live in tooltips. */
+html[data-sidebar="collapsed"] .sidebar { width: var(--sidebar-rail); }
+html[data-sidebar="collapsed"] body.has-sidebar .app-main { padding-left: var(--sidebar-rail); }
+html[data-sidebar="collapsed"] .sb-label { opacity: 0; pointer-events: none; }
+html[data-sidebar="collapsed"] .sb-item,
+html[data-sidebar="collapsed"] .sb-logout { padding-left: 12px; }
+html[data-sidebar="collapsed"] .sb-who { padding-left: 8px; }
+html[data-sidebar="collapsed"] .sb-brand { display: none; }
+html[data-sidebar="collapsed"] .sb-head { justify-content: center; padding: 11px 0 10px; }
+html[data-sidebar="collapsed"] .sb-toggle { margin-left: 0; }
+html[data-sidebar="collapsed"] .sb-section {
+  height: 0;
+  padding: 9px 0 0;
+  margin: 0 14px;
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Phones: the bar becomes an overlay drawer rather than eating the width, and
+   the role chip goes so a long name still fits beside the brand. */
+@media (max-width: 900px) {
+  .navbar { display: block; }
+  .sidebar { top: var(--navbar-h); transform: translateX(-100%); width: var(--sidebar-w); box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35); }
+  .sb-head { display: none; }
+  html[data-sidebar="open"] .sidebar { transform: none; }
+  html[data-sidebar="collapsed"] .sidebar { width: var(--sidebar-w); }
+  html[data-sidebar="collapsed"] .sb-label { opacity: 1; pointer-events: auto; }
+  html[data-sidebar="collapsed"] .sb-item,
+  html[data-sidebar="collapsed"] .sb-logout { padding-left: 10px; }
+  html[data-sidebar="collapsed"] .sb-who { padding-left: 10px; }
+  html[data-sidebar="collapsed"] .sb-section { height: auto; padding: 14px 18px 5px; margin: 0; border-top: 0; }
+  body.has-sidebar .app-main,
+  html[data-sidebar="collapsed"] body.has-sidebar .app-main { padding-left: 0; }
+  html[data-sidebar="open"] .sb-backdrop {
+    display: block;
+    position: fixed;
+    inset: var(--navbar-h) 0 0 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 89;
+  }
 }
 
 /* ---------- Page layout ---------- */
 .page-container {
   padding: 18px 24px;
   max-width: 100%;
-  min-height: calc(100vh - 60px);
+  min-height: calc(100vh - var(--navbar-h));
 }
 .page-card {
   background: var(--card-bg);
