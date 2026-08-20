@@ -154,7 +154,7 @@
     .called-tag { margin-left: 6px; font-size: 11px; color: #16a34a; font-weight: 600; white-space: nowrap; }
     /* Group an invoice's follow-up buttons so they wrap as a tidy cluster under the
        bucket tag, with even spacing, instead of breaking unevenly mid-row. */
-    .inv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
+    .inv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
     .inv-actions form { margin: 0; display: inline-flex; }
     .inv-actions .call-now-btn, .inv-actions .wa-btn, .inv-actions .email-btn,
     .inv-actions .called-tag, .inv-actions .tpl-box { margin-left: 0; }
@@ -173,22 +173,8 @@
        opaque background first, or the scrolling cells would show through. */
     .action-cell { text-align: right; white-space: normal; vertical-align: top; }
     .action-cell .debtor-action-btn { margin: 2px 0 2px 4px; }
-    .data-table tbody > tr > td { background: #fff; }
-    .data-table td.action-cell, .data-table th:last-child, .data-table tr.totals > td:last-child {
-        position: sticky;
-        right: 0;
-        z-index: 2;
-        width: 150px;
-        min-width: 150px;
-    }
-    /* The figure everyone is actually reading rides along with the buttons. */
-    .data-table th.total-cell, .data-table td.total-cell {
-        position: sticky;
-        right: 150px;
-        z-index: 2;
-        box-shadow: -7px 0 9px -7px rgba(15, 23, 42, .22);
-    }
-    .data-table th:last-child, .data-table th.total-cell { background: #f9fafb; }
+    .data-table > tbody > tr > td { background: #fff; }
+    .data-table > tbody > tr > td { background: #fff; }
     .data-table tr.totals > td { background: #f0f8f7; }
     .debtor-action { display: inline; }
     .debtor-action-btn { border: 1px solid; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -221,8 +207,20 @@
     .stmt-report { font-size: 11px; font-weight: 600; white-space: nowrap; }
     .debtor-detail > td { background: #fbfdfd !important; padding: 0 0 0 28px; border-bottom: 2px solid #e5e7eb; }
     .statement { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 12.5px; }
-    .statement th { background: #eef6f6; color: #5a8a8a; text-transform: uppercase; letter-spacing: 0.4px; font-size: 11px; padding: 6px 10px; text-align: left; }
+    .statement th { background: #eef6f6; color: #5a8a8a; text-transform: uppercase; letter-spacing: 0.4px; font-size: 11px; padding: 6px 10px; text-align: left; white-space: nowrap; }
     .statement td { padding: 6px 10px; border-bottom: 1px solid #eef2f2; }
+    /* Dates and figures read as single values, never split across two lines. */
+    .statement td.date, .statement td.num, .statement td.stat { white-space: nowrap; }
+    /* Two-word money headers are better over two lines than overflowing their
+       column - only the values below them have to stay on one line. */
+    .statement th.num { white-space: normal; }
+    .statement th.num, .statement td.num { min-width: 94px; }
+    .statement td.proj { min-width: 110px; }
+    /* Bucket cell doubles as the row's action area: the tag, the credit-note
+       tick and the follow-up buttons each sit on their own line, left-aligned. */
+    .statement td.bucket-cell { min-width: 152px; }
+    .statement td.bucket-cell > * { display: block; width: fit-content; margin: 0 0 4px 0; }
+    .statement td.bucket-cell > *:last-child { margin-bottom: 0; }
     .statement tr:last-child td { border-bottom: none; }
     .bucket-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #e0f2f2; color: #065f5e; }
     .bucket-tag.over { background: #fee2e2; color: #991b1b; }
@@ -1019,15 +1017,19 @@ document.addEventListener('click', function (e) {
                         <input type="hidden" name="contact_name" value="{{ d.name }}">
                         <button type="submit" class="debtor-action-btn reopen">&#8634; Reopen</button>
                     </form>
-                    {% elif can_manage and not write_off_page and not closed_page %}
-                    {% if not handover_page %}
+                    {% elif not write_off_page and not closed_page %}
+                    {% if can_manage and not handover_page %}
                     <button type="button" class="debtor-action-btn handover"
                             onclick="event.stopPropagation(); openHandoverAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
                             title="Immediately move ALL this client's open invoices to the Handover page (no waiting for the aging threshold)">&#9889; Hand over client</button>
                     {% endif %}
+                    {# Write-off is open to every role; the two either side stay Super Admin. #}
+                    {% if can_write_off %}
                     <button type="button" class="debtor-action-btn write-off"
                             onclick="event.stopPropagation(); openWriteOffAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
                             title="Write off ALL this client's open invoices">&#8855; Write off client</button>
+                    {% endif %}
+                    {% if can_manage %}
                     <form method="post" action="{% url 'xero_close_debtor' %}" class="debtor-action" onclick="event.stopPropagation();"
                           onsubmit="return confirm('Mark {{ d.name|escapejs }} as closed? They will move to the Closed Debtors page.');">
                         {% csrf_token %}
@@ -1036,6 +1038,7 @@ document.addEventListener('click', function (e) {
                         <input type="hidden" name="next" value="{{ current_full_path }}">
                         <button type="submit" class="debtor-action-btn close">&#10005; Mark closed</button>
                     </form>
+                    {% endif %}
                     {% endif %}
                 </td>
             </tr>

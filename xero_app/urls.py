@@ -39,6 +39,10 @@ urlpatterns = [
     path("filing/company/", views.xero_filing_company, name="xero_filing_company"),
     path("debtor/statement/", views.xero_debtor_statement, name="xero_debtor_statement"),
     path("debtor/allocate/", views.xero_allocate_debtor, name="xero_allocate_debtor"),
+    # Popup notices (polled from every page)
+    path("notifications/", views.xero_notifications, name="xero_notifications"),
+    path("notices/", views.xero_notices, name="xero_notices"),
+    path("notices/seen/", views.xero_notice_seen, name="xero_notice_seen"),
     path("debtor/log-call/", views.xero_log_call, name="xero_log_call"),
     path("invoice/<str:invoice_id>/email-sent/", views.xero_log_email, name="xero_log_email"),
     path("invoice/<str:invoice_id>/unlog-contact/", views.xero_unlog_contact, name="xero_unlog_contact"),

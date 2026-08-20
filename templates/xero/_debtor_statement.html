@@ -140,10 +140,10 @@ current_full_path.
             <td>{% if inv.invoice_id %}<span class="caret inv-caret">&#9654;</span> {% endif %}{{ inv.number|default:"&mdash;" }}
                 {% if inv.invoice_id %}<a href="{% url 'xero_invoice_online' inv.invoice_id %}" target="_blank" rel="noopener" class="online-link" title="Open this invoice online (Xero)" onclick="event.stopPropagation();" style="margin-left:6px;font-size:11px;white-space:nowrap;">&#128279;&nbsp;View online</a>{% endif %}
                 {% if inv.inspector %}<div style="font-size:11px;color:#64748b;margin-top:2px;">Inspector: {{ inv.inspector }}</div>{% endif %}</td>
-            <td>{{ inv.invoice_date|date:"Y-m-d"|default:"&mdash;" }}</td>
-            <td>{{ inv.due_date|date:"Y-m-d"|default:"&mdash;" }}</td>
+            <td class="date">{{ inv.invoice_date|date:"Y-m-d"|default:"&mdash;" }}</td>
+            <td class="date">{{ inv.due_date|date:"Y-m-d"|default:"&mdash;" }}</td>
             <td class="num">{% if inv.days_past_due > 0 %}{{ inv.days_past_due }}{% else %}&mdash;{% endif %}</td>
-            <td><span class="bucket-tag{% if inv.days_past_due > 0 %} over{% endif %}">{{ inv.bucket }}</span>
+            <td class="bucket-cell"><span class="bucket-tag{% if inv.days_past_due > 0 %} over{% endif %}">{{ inv.bucket }}</span>
                 {% if handover_page %}
                     {% if inv.handover_marked %}
                     <span class="ho-badge marked" title="Manually marked for handover by an administrator">&#9889; Marked</span>
@@ -229,8 +229,8 @@ current_full_path.
                 {% elif inv.emailed_recently %}<span class="called-tag" title="Email logged in the last 7 days">&#10003; emailed <a href="#" class="undo-link" title="Undo &mdash; remove this email mark" onclick="event.preventDefault(); event.stopPropagation(); unlogContact('{{ inv.invoice_id }}', 'email', this);">&#10005;</a></span>{% endif %}
                 </div>
                 {% endif %}</td>
-            <td>{{ inv.project_code|default:"&mdash;" }}</td>
-            <td>{{ inv.status }}</td>
+            <td class="proj">{{ inv.project_code|default:"&mdash;" }}</td>
+            <td class="stat">{{ inv.status }}</td>
             <td class="num">R&nbsp;{{ inv.total|floatformat:2|intcomma }}</td>
             <td class="num"><strong>R&nbsp;{{ inv.amount_due|floatformat:2|intcomma }}</strong></td>
             <td class="row-actions">{% if inv.invoice_id %}

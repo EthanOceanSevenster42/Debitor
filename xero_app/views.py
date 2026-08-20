@@ -17,7 +17,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, JsonResponse
 from django.core.cache import cache
 from django.core.management import call_command
-from django.db.models import Sum, Count, Min, Max
+from django.db.models import Sum, Count, Min, Max, Q
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -29,7 +29,7 @@ from .models import (XeroConnection, OpenInvoiceSnapshot, SyncRun, SyncSchedule,
                      HandoverInvoice, HandoverExclusion, WhatsAppTemplate, OnlineInvoiceLink,
                      EmailTemplate, MessageTemplate, SystemSetting, HandoverSetting,
                      LegalMatter, LegalStep, LegalStepComment, LegalStepCommentAttachment,
-                     RecoveredInvoice, LawyerReportConfig, ReportRecipient,
+                     RecoveredInvoice, LawyerReportConfig, ReportRecipient, DebtorNotice,
                      DebtorComment,
                      DEFAULT_WA_TEMPLATE, DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY)
 from . import legal_workflow
@@ -64,6 +64,13 @@ def _can_collect(user):
     """Collections actions: call / WhatsApp / email, comments + uploads, and the
     per-debtor follow-up cadence shift. Administrators and Super Admins."""
     return user.is_super_admin or user.is_administrator
+
+
+def _can_write_off(user):
+    """Writing off a client's open invoices — open to every assigned role
+    (Super Admin, Administrator, Lawyer). A user with no role assigned still
+    has no access, as everywhere else."""
+    return bool(getattr(user, "role", ""))
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -1151,6 +1158,7 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         "handover_excluded_count": HandoverSetting.objects.filter(tenant_id=tenant_id).count(),
         "can_handover_manage": _can_handover_manage(request.user),
         "can_manage": _can_manage(request.user),
+        "can_write_off": _can_write_off(request.user),
         "can_collect": _can_collect(request.user),
         "last_run": last_run,
         "last_success": last_success,
@@ -1292,14 +1300,14 @@ def xero_write_off_invoice(request):
 @login_required
 @require_POST
 def xero_write_off_debtor(request):
-    """Write off ALL of a debtor's open invoices at once (Super Admin only).
-    Available from the Debtors Action and Handover pages. A reason is required
-    and is logged on every affected invoice's lifecycle."""
+    """Write off ALL of a debtor's open invoices at once. Open to every assigned
+    role. Available from the Debtors Action and Handover pages. A reason is
+    required and is logged on every affected invoice's lifecycle."""
     tenant_id = _current_tenant_id(request)
     if not tenant_id:
         return redirect("xero_login")
-    if not _can_manage(request.user):
-        messages.error(request, "Only a Super Admin can write off a client.")
+    if not _can_write_off(request.user):
+        messages.error(request, "Your account has no role assigned.")
         return redirect(request.POST.get("next") or "xero_aging_report")
     contact_id = (request.POST.get("contact_id") or "").strip()
     contact_name = (request.POST.get("contact_name") or "").strip()
@@ -1405,12 +1413,23 @@ def xero_debtor_comment_add(request):
             return JsonResponse({"error": "Comment text is required."}, status=400)
         messages.error(request, "Comment text is required.")
         return redirect(request.POST.get("next") or "xero_aging_report")
+    author_name = request.user.get_full_name() or request.user.email
     DebtorComment.objects.create(
         tenant_id=tenant_id, contact_id=contact_id, contact_name=contact_name,
-        author=request.user,
-        author_name=request.user.get_full_name() or request.user.email,
-        text=text[:2000],
+        author=request.user, author_name=author_name, text=text[:2000],
     )
+    # A Super Admin commenting on somebody else's debtor is a message to them:
+    # raise a popup for whoever the debtor is allocated to.
+    if request.user.is_super_admin:
+        alloc = (DebtorAllocation.objects
+                 .filter(tenant_id=tenant_id, contact_id=contact_id)
+                 .select_related("administrator").first())
+        if alloc and alloc.administrator_id != request.user.id and alloc.administrator.is_active:
+            DebtorNotice.objects.create(
+                tenant_id=tenant_id, recipient=alloc.administrator,
+                actor_name=author_name, actor_role=request.user.get_role_display(),
+                contact_id=contact_id, contact_name=contact_name, text=text[:2000],
+            )
     if is_ajax:
         return JsonResponse({"ok": True})
     return redirect(request.POST.get("next") or "xero_aging_report")
@@ -2537,6 +2556,7 @@ def xero_debtor_statement(request):
         "handover_page": handover_page,
         "can_handover_manage": _can_manage(request.user),
         "can_manage": _can_manage(request.user),
+        "can_write_off": _can_write_off(request.user),
         "can_collect": _can_collect(request.user),
         "can_approve_legal": request.user.is_super_admin,
         "default_handover_days": HANDOVER_DAYS,
@@ -2545,6 +2565,81 @@ def xero_debtor_statement(request):
         # page the user expanded from (not to this fragment endpoint).
         "current_full_path": request.GET.get("from") or "/xero/aging/",
     })
+
+
+@login_required
+def xero_notices(request):
+    """Unseen popups for the signed-in user. Polled from every page."""
+    qs = DebtorNotice.objects.filter(recipient=request.user, seen_at__isnull=True)
+    total = qs.count()
+    # Newest first, capped - a long backlog scrolls in the panel rather than
+    # arriving as a stack of interruptions.
+    rows = qs.order_by("-created_at")[:50]
+    return JsonResponse({"total": total, "notices": [
+        {"id": n.id, "actor": n.actor_name, "role": n.actor_role,
+         "debtor": n.contact_name or n.contact_id, "text": n.text,
+         "at": timezone.localtime(n.created_at).strftime("%d %b %H:%M")}
+        for n in rows]})
+
+
+@login_required
+def xero_notifications(request):
+    """Everything ever raised for the signed-in user, newest first - so a notice
+    dismissed from the corner panel can still be gone back to. Searchable, and
+    grouped by day so today reads apart from yesterday."""
+    mine = DebtorNotice.objects.filter(recipient=request.user)
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+    count_today = mine.filter(created_at__date=today).count()
+    count_yesterday = mine.filter(created_at__date=yesterday).count()
+
+    q = (request.GET.get("q") or "").strip()
+    qs = mine
+    if q:
+        qs = qs.filter(Q(contact_name__icontains=q) | Q(actor_name__icontains=q)
+                       | Q(text__icontains=q))
+    rows = list(qs[:300])
+
+    # Consecutive runs of the same day become one headed group.
+    groups = []
+    for n in rows:
+        d = timezone.localtime(n.created_at).date()
+        label = ("Today" if d == today else
+                 "Yesterday" if d == yesterday else d.strftime("%d %b %Y"))
+        if not groups or groups[-1]["label"] != label:
+            groups.append({"label": label, "rows": []})
+        groups[-1]["rows"].append(n)
+
+    # Opening this page IS reading them. The rows already in memory keep their
+    # unread state, so this visit still shows what was new; the next one won't.
+    was_unread = mine.filter(seen_at__isnull=True).count()
+    if was_unread:
+        mine.filter(seen_at__isnull=True).update(seen_at=timezone.now())
+
+    return render(request, "xero/notifications.html", {
+        "groups": groups,
+        "match_count": len(rows),
+        "unread": was_unread,
+        "count_today": count_today,
+        "count_yesterday": count_yesterday,
+        "delta": count_today - count_yesterday,
+        "q": q,
+    })
+
+
+@login_required
+@require_POST
+def xero_notice_seen(request):
+    """Dismiss one popup. A user can only ever dismiss their own."""
+    qs = DebtorNotice.objects.filter(recipient=request.user, seen_at__isnull=True)
+    wants_page = (request.POST.get("redirect") or "") == "1"
+    if (request.POST.get("all") or "") == "1":
+        qs.update(seen_at=timezone.now())
+        return redirect("xero_notifications") if wants_page else JsonResponse({"ok": True})
+    ids = [i for i in (request.POST.get("ids") or "").split(",") if i.strip().isdigit()]
+    if ids:
+        qs.filter(id__in=ids).update(seen_at=timezone.now())
+    return JsonResponse({"ok": True})
 
 
 @login_required

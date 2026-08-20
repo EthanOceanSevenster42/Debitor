@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Notifications - FSA Debtor System{% endblock %}
+{% block extra_head %}
+<style>
+    .nt-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+    .nt-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+    .nt-search { display: flex; gap: 6px; }
+    .nt-search input { border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 10px; font: inherit;
+                       font-size: 12.5px; min-width: 230px; }
+    .nt-search input:focus { outline: 2px solid #a7f3d0; outline-offset: 0; border-color: var(--brand-teal, #0E7C7B); }
+    /* Today vs yesterday at a glance. */
+    .nt-cmp { display: flex; gap: 8px; margin: 0 0 14px; flex-wrap: wrap; }
+    .nt-stat { background: #f5fbfb; border: 1px solid #d6efee; border-radius: 8px; padding: 6px 11px; min-width: 96px; }
+    .nt-stat .k { font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: #5a8a8a; font-weight: 700; }
+    .nt-stat .v { font-size: 16px; font-weight: 700; color: var(--navy); line-height: 1.15; }
+    .nt-stat.delta.up { background: #fef2f2; border-color: #fecaca; }
+    .nt-stat.delta.up .k, .nt-stat.delta.up .v { color: #b91c1c; }
+    .nt-stat.delta.down { background: #ecfdf5; border-color: #a7f3d0; }
+    .nt-stat.delta.down .k, .nt-stat.delta.down .v { color: #047857; }
+    /* Day heading, then a tight row per notice. */
+    .nt-day { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: #94a3b8;
+              font-weight: 700; margin: 12px 0 5px; }
+    .nt-day:first-of-type { margin-top: 0; }
+    .nt-row { display: flex; gap: 9px; padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 8px;
+              background: #fff; margin-bottom: 4px; }
+    .nt-row.unread { border-left: 3px solid var(--brand-teal, #0E7C7B); background: #f8fbfb; }
+    .nt-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: #e2e8f0; margin-top: 6px; }
+    .nt-row.unread .nt-dot { background: var(--brand-teal, #0E7C7B); }
+    .nt-body { min-width: 0; flex: 1; }
+    .nt-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .nt-debtor { font-size: 12.5px; font-weight: 700; color: var(--navy); }
+    .nt-who { font-size: 10.5px; color: #94a3b8; font-weight: 600; }
+    .nt-who strong { color: #64748b; }
+    .nt-text { font-size: 12px; color: #334155; line-height: 1.35; margin-top: 1px; }
+    .nt-state { flex: 0 0 auto; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+                color: #cbd5e1; align-self: flex-start; }
+    .nt-row.unread .nt-state { color: var(--brand-teal, #0E7C7B); }
+    mark { background: #fef08a; color: inherit; padding: 0 1px; border-radius: 2px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-card">
+    <div class="nt-head">
+        <div>
+            <h1 class="page-title" style="font-size:20px;">Notifications</h1>
+            <p class="page-subtitle" style="margin:0; font-size:12.5px;">
+                {% if unread %}{{ unread }} new since you last looked &mdash; now marked as read{% else %}Nothing new{% endif %} &middot;
+                comments your Super Admin left on debtors allocated to you.
+            </p>
+        </div>
+        <div class="nt-tools">
+            <form method="get" class="nt-search">
+                <input type="search" name="q" value="{{ q }}" placeholder="Search debtor, sender or text&hellip;"
+                       aria-label="Search notifications">
+                <button type="submit" class="btn btn-secondary btn-sm">Search</button>
+                {% if q %}<a class="btn btn-secondary btn-sm" href="{% url 'xero_notifications' %}">Clear</a>{% endif %}
+            </form>
+        </div>
+    </div>
+
+    <div class="nt-cmp">
+        <div class="nt-stat"><div class="k">Today</div><div class="v">{{ count_today }}</div></div>
+        <div class="nt-stat"><div class="k">Yesterday</div><div class="v">{{ count_yesterday }}</div></div>
+        <div class="nt-stat delta {% if delta > 0 %}up{% elif delta < 0 %}down{% endif %}">
+            <div class="k">vs yesterday</div>
+            <div class="v">{% if delta > 0 %}+{{ delta }}{% elif delta < 0 %}{{ delta }}{% else %}&mdash;{% endif %}</div>
+        </div>
+    </div>
+
+    {% if q %}
+    <p class="muted" style="font-size:12.5px; margin:0 0 8px;">
+        {{ match_count }} match{{ match_count|pluralize:"es" }} for &ldquo;{{ q }}&rdquo;.
+    </p>
+    {% endif %}
+
+    {% for g in groups %}
+    <div class="nt-day">{{ g.label }}</div>
+    {% for n in g.rows %}
+    <div class="nt-row{% if not n.seen_at %} unread{% endif %}">
+        <span class="nt-dot"></span>
+        <div class="nt-body">
+            <div class="nt-line">
+                <span class="nt-debtor">{{ n.contact_name|default:n.contact_id }}</span>
+                <span class="nt-who"><strong>{{ n.actor_name|default:"—" }}</strong>{% if n.actor_role %} &middot; {{ n.actor_role }}{% endif %} &middot; {{ n.created_at|date:"H:i" }}</span>
+            </div>
+            <div class="nt-text">{{ n.text }}</div>
+        </div>
+        <span class="nt-state">{% if n.seen_at %}Read{% else %}New{% endif %}</span>
+    </div>
+    {% endfor %}
+    {% empty %}
+    <p class="muted">
+        {% if q %}Nothing matches &ldquo;{{ q }}&rdquo;.
+        {% else %}No notifications yet. You'll be told here whenever a Super Admin comments on a debtor allocated to you.{% endif %}
+    </p>
+    {% endfor %}
+</div>
+{% endblock %}

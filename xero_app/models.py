@@ -90,6 +90,34 @@ class Invoice(models.Model):
         ordering = ["-due_date", "-invoice_date"]
 
 
+class DebtorNotice(models.Model):
+    """A popup waiting for one user.
+
+    Raised when a Super Admin comments on a debtor that is allocated to somebody
+    else: the allocated administrator is told, wherever they happen to be in the
+    app. Rows are kept after dismissal so the trail shows what was raised and
+    when it was seen.
+    """
+    tenant_id = models.CharField(max_length=64, db_index=True)
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="debtor_notices",
+    )
+    actor_name = models.CharField(max_length=255, blank=True)
+    actor_role = models.CharField(max_length=64, blank=True)
+    contact_id = models.CharField(max_length=255, blank=True)
+    contact_name = models.CharField(max_length=255, blank=True)
+    text = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["recipient", "seen_at"])]
+
+    def __str__(self):
+        return f"to {self.recipient}: {self.contact_name} ({self.text[:30]})"
+
+
 class DebtorAllocation(models.Model):
     """Allocates a debtor (Xero contact) to an administrator for payment follow-up.
 
