@@ -1140,7 +1140,7 @@ document.addEventListener('click', function (e) {
     </div>
     {% endif %}
 
-    {% if can_manage and not closed_page and not write_off_page %}
+    {% if can_write_off and not closed_page and not write_off_page %}
     <div id="woAllBackdrop" class="wo-backdrop" onclick="closeWriteOffAllModal(event)">
         <form id="woAllForm" class="wo-card" method="post" action="{% url 'xero_write_off_debtor' %}"
               onclick="event.stopPropagation();" onsubmit="return submitWriteOffAll(event);">

@@ -1261,9 +1261,9 @@ def xero_write_off_invoice(request):
     if not tenant_id:
         return JsonResponse({"error": "Not connected to Xero."}, status=400)
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-    if not _can_manage(request.user):
+    if not _can_write_off(request.user):
         if is_ajax:
-            return JsonResponse({"error": "Only a Super Admin can write off an invoice."}, status=403)
+            return JsonResponse({"error": "Your account has no role assigned."}, status=403)
         messages.error(request, "Only a Super Admin can write off an invoice.")
         return redirect(request.POST.get("next") or "xero_aging_report")
     invoice_id = (request.POST.get("invoice_id") or "").strip()

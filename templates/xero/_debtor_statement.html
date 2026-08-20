@@ -266,7 +266,7 @@ current_full_path.
                                 <button type="submit" class="row-menu-item moveback" role="menuitem">&#8634; Move back to Debtors Action</button>
                             </form>
                         {% endif %}
-                        {% if can_manage %}
+                        {% if can_write_off %}
                         <button type="button" class="row-menu-item write-off" role="menuitem"
                                 onclick="event.stopPropagation(); closeAllRowMenus(); openWriteOffModal('{{ inv.invoice_id }}', '{{ inv.number|escapejs }}', '{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');">&#8855; Write off</button>
                         {% endif %}
@@ -285,6 +285,8 @@ current_full_path.
                     {% if can_manage %}
                     <button type="button" class="row-menu-item handover" role="menuitem"
                             onclick="event.stopPropagation(); closeAllRowMenus(); openHandoverModal('{{ inv.invoice_id }}', '{{ inv.number|escapejs }}', '{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');">&#9889; Mark for handover</button>
+                    {% endif %}
+                    {% if can_write_off %}
                     <button type="button" class="row-menu-item write-off" role="menuitem"
                             onclick="event.stopPropagation(); closeAllRowMenus(); openWriteOffModal('{{ inv.invoice_id }}', '{{ inv.number|escapejs }}', '{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');">&#8855; Write off</button>
                     {% endif %}
