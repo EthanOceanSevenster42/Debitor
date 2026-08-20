@@ -35,6 +35,11 @@
     .nt-state { flex: 0 0 auto; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
                 color: #cbd5e1; align-self: flex-start; }
     .nt-row.unread .nt-state { color: var(--brand-teal, #0E7C7B); }
+    .nt-mark { flex: 0 0 auto; margin: 0; align-self: flex-start; }
+    .nt-mark-btn { background: #fff; border: 1px solid #a7f3d0; color: #047857; border-radius: 6px;
+                   padding: 2px 8px; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
+                   white-space: nowrap; }
+    .nt-mark-btn:hover { background: var(--brand-teal, #0E7C7B); border-color: var(--brand-teal, #0E7C7B); color: #fff; }
     mark { background: #fef08a; color: inherit; padding: 0 1px; border-radius: 2px; }
 </style>
 {% endblock %}
@@ -44,7 +49,7 @@
         <div>
             <h1 class="page-title" style="font-size:20px;">Notifications</h1>
             <p class="page-subtitle" style="margin:0; font-size:12.5px;">
-                {% if unread %}{{ unread }} new since you last looked &mdash; now marked as read{% else %}Nothing new{% endif %} &middot;
+                {% if unread %}{{ unread }} unread{% else %}Nothing unread{% endif %} &middot;
                 comments your Super Admin left on debtors allocated to you.
             </p>
         </div>
@@ -55,6 +60,14 @@
                 <button type="submit" class="btn btn-secondary btn-sm">Search</button>
                 {% if q %}<a class="btn btn-secondary btn-sm" href="{% url 'xero_notifications' %}">Clear</a>{% endif %}
             </form>
+            {% if unread %}
+            <form method="post" action="{% url 'xero_notice_seen' %}" style="margin:0;">
+                {% csrf_token %}
+                <input type="hidden" name="all" value="1">
+                <input type="hidden" name="redirect" value="1">
+                <button type="submit" class="btn btn-secondary btn-sm">&#10003; Mark all read</button>
+            </form>
+            {% endif %}
         </div>
     </div>
 
@@ -85,7 +98,16 @@
             </div>
             <div class="nt-text">{{ n.text }}</div>
         </div>
-        <span class="nt-state">{% if n.seen_at %}Read{% else %}New{% endif %}</span>
+        {% if n.seen_at %}
+        <span class="nt-state">Read</span>
+        {% else %}
+        <form method="post" action="{% url 'xero_notice_seen' %}" class="nt-mark">
+            {% csrf_token %}
+            <input type="hidden" name="ids" value="{{ n.id }}">
+            <input type="hidden" name="redirect" value="1">
+            <button type="submit" class="nt-mark-btn" title="Mark this one as read">&#10003; Mark read</button>
+        </form>
+        {% endif %}
     </div>
     {% endfor %}
     {% empty %}

@@ -2586,7 +2586,8 @@ def xero_notices(request):
 def xero_notifications(request):
     """Everything ever raised for the signed-in user, newest first - so a notice
     dismissed from the corner panel can still be gone back to. Searchable, and
-    grouped by day so today reads apart from yesterday."""
+    grouped by day so today reads apart from yesterday. Nothing is marked read
+    by opening the page - the user marks them."""
     mine = DebtorNotice.objects.filter(recipient=request.user)
     today = timezone.localdate()
     yesterday = today - timedelta(days=1)
@@ -2610,16 +2611,10 @@ def xero_notifications(request):
             groups.append({"label": label, "rows": []})
         groups[-1]["rows"].append(n)
 
-    # Opening this page IS reading them. The rows already in memory keep their
-    # unread state, so this visit still shows what was new; the next one won't.
-    was_unread = mine.filter(seen_at__isnull=True).count()
-    if was_unread:
-        mine.filter(seen_at__isnull=True).update(seen_at=timezone.now())
-
     return render(request, "xero/notifications.html", {
         "groups": groups,
         "match_count": len(rows),
-        "unread": was_unread,
+        "unread": mine.filter(seen_at__isnull=True).count(),
         "count_today": count_today,
         "count_yesterday": count_yesterday,
         "delta": count_today - count_yesterday,
@@ -2639,7 +2634,7 @@ def xero_notice_seen(request):
     ids = [i for i in (request.POST.get("ids") or "").split(",") if i.strip().isdigit()]
     if ids:
         qs.filter(id__in=ids).update(seen_at=timezone.now())
-    return JsonResponse({"ok": True})
+    return redirect("xero_notifications") if wants_page else JsonResponse({"ok": True})
 
 
 @login_required
