@@ -1,0 +1,20 @@
+# Pulls open invoices from Xero into the database. Self-gating: the command reads
+# its own cadence from the in-app Schedule page, so firing it hourly is intended.
+# Placeholders (@APP_DIR@ etc.) are substituted by deploy/install-timers.sh.
+[Unit]
+Description=FSA Debtor System - Xero to database sync
+Documentation=file://@APP_DIR@/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@RUN_AS@
+# settings.py calls load_dotenv(), which searches upwards from the working
+# directory - so this is what makes .env load.
+WorkingDirectory=@APP_DIR@
+ExecStart=@PYTHON@ manage.py sync_xero
+# A cold cache pulls a lot of invoices at half of Xero's rate limit.
+TimeoutStartSec=1800
+StandardOutput=journal
+StandardError=journal

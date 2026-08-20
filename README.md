@@ -228,7 +228,27 @@ whether to do anything — so it's safe (and intended) to fire them **hourly**.
 | `manage.py sync_xero` | Pulls open invoices Xero → SQL (rate-limited to half of Xero's limits) | In-app **Schedule** page |
 | `manage.py send_lawyer_report` | Sends the weekly lawyer report **if due** | In-app **Lawyer Report** page |
 
-### Linux — cron
+### Linux — systemd timers (recommended)
+
+The repo ships the units plus an idempotent installer, so the schedule is
+version-controlled rather than hand-typed on the box:
+
+```bash
+sudo deploy/install-timers.sh              # install / refresh, then enable
+sudo deploy/install-timers.sh --status     # what's scheduled and when it next runs
+sudo deploy/install-timers.sh --uninstall  # stop, disable, remove
+journalctl -u fsa-sync -u fsa-lawyer-report -n 50
+```
+
+It infers the checkout path, `.venv/bin/python` and the user owning `manage.py`;
+override with `APP_DIR=`, `PYTHON=`, `RUN_AS=`. Re-running rewrites the units from
+`deploy/systemd/`, so **append it to the server's `deploy-dms` script** and every
+deploy re-asserts the schedule from the repo.
+
+Both timers are `Persistent=true`: a slot missed because the server was down runs
+on the way back up, so a week's report isn't silently skipped.
+
+### Linux — cron (if systemd isn't available)
 ```cron
 # every hour, on the hour
 0 * * * * cd /path/to/Debitor-main && /path/to/.venv/bin/python manage.py sync_xero >> /var/log/fsa_sync.log 2>&1
@@ -269,7 +289,7 @@ inside the .bat to match the server.
 - [ ] `MS_GRAPH_*` set; `Mail.Send` admin-consented; `send_test_email` delivers
 - [ ] `MS_GRAPH_CLIENT_SECRET` rotated if it was ever shared in plaintext
 - [ ] `migrate` run; `createsuperuser` done; `collectstatic` done
-- [ ] Hourly `sync_xero` **and** `send_lawyer_report` scheduled
+- [ ] Hourly `sync_xero` **and** `send_lawyer_report` scheduled (`sudo deploy/install-timers.sh`)
 - [ ] `media/` on persistent storage; database **backups** enabled
 - [ ] `python manage.py check --deploy` reviewed
 

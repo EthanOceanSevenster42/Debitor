@@ -1,0 +1,18 @@
+# Sends the lawyer progress report *if due*. The day/time/frequency and the
+# recipient list are configured in-app under Lawyer Report (Super Admin); this
+# job just asks the question every hour. Sending is off until enabled there.
+# Placeholders (@APP_DIR@ etc.) are substituted by deploy/install-timers.sh.
+[Unit]
+Description=FSA Debtor System - lawyer progress report
+Documentation=file://@APP_DIR@/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@RUN_AS@
+WorkingDirectory=@APP_DIR@
+ExecStart=@PYTHON@ manage.py send_lawyer_report
+TimeoutStartSec=600
+StandardOutput=journal
+StandardError=journal

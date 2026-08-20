@@ -1,0 +1,13 @@
+[Unit]
+Description=Hourly due-check for the FSA Debtor System lawyer report
+
+[Timer]
+# Five past, so the report reflects the sync that ran on the hour.
+OnCalendar=*-*-* *:05:00
+# If the server was down at the configured send slot, still send on the way back
+# up rather than skipping the week.
+Persistent=true
+Unit=fsa-lawyer-report.service
+
+[Install]
+WantedBy=timers.target

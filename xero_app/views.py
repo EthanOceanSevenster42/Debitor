@@ -2121,12 +2121,9 @@ def xero_legal(request):
         # Milestone strip shows only workflow progress (completed steps + lifecycle
         # milestones) — not comments or route clicks; full history is in the report.
         m.milestones = [e for e in full_timeline if e["kind"] in ("step", "milestone")]
-        # "Last action" line on the card: the most recent workflow step the lawyers
-        # ticked. Before any step is done, fall back to the latest lifecycle
-        # milestone so the line still says where the matter stands.
-        steps_done = [e for e in full_timeline if e["kind"] == "step"]
-        m.last_action = steps_done[-1] if steps_done else next(
-            (e for e in reversed(full_timeline) if e["kind"] == "milestone"), None)
+        # "Last action" line on the card — the same rule the weekly lawyer report
+        # prints in its Last action column, reusing the timeline already built here.
+        m.last_action = legal_workflow.last_action(m, timeline=full_timeline)
         # Staleness still reacts to ANY activity, including new comments.
         last = full_timeline[-1]["date"] if full_timeline else m.sent_at
         m.days_idle = (now - last).days if last else 0

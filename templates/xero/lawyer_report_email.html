@@ -18,6 +18,10 @@
     </table>
 
     <p style="font-size:13px;color:#475569;margin:0 0 6px;">
+        <strong>R&nbsp;{{ kpis.owed_active|floatformat:2|intcomma }}</strong> sits with the lawyers across
+        {{ kpis.active }} active matter{{ kpis.active|pluralize }}.
+    </p>
+    <p style="font-size:13px;color:#475569;margin:0 0 6px;">
         {{ kpis.in_litigation }} in litigation &middot; {{ kpis.in_collections }} in collections &middot;
         average {{ kpis.avg_days_idle }} day{{ kpis.avg_days_idle|pluralize }} since last worked.
     </p>
@@ -27,7 +31,8 @@
     </p>
     {% if kpis.idle_14 %}
     <p style="font-size:13px;color:#b91c1c;margin:8px 0 0;font-weight:600;">
-        &#9888; {{ kpis.idle_14 }} matter{{ kpis.idle_14|pluralize }} with no activity for 14+ days &mdash; see the PDF.
+        &#9888; {{ kpis.idle_14 }} matter{{ kpis.idle_14|pluralize }} with no activity for 14+ days,
+        covering R&nbsp;{{ kpis.owed_idle_14|floatformat:2|intcomma }} of debt &mdash; listed first in the PDF.
     </p>
     {% endif %}
 

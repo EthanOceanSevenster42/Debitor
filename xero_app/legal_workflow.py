@@ -139,3 +139,51 @@ def step_section(step_key):
     if step_key == "_route":
         return ""
     return "Collections"
+
+
+def _step_events(matter):
+    """Completed steps plus lifecycle milestones for a matter, oldest first.
+
+    Reads ``matter.step_states`` with ``.all()`` so a prefetched queryset costs no
+    extra query. Comments and route changes are deliberately absent: this feeds
+    "last action", which means work the attorneys actually ticked off.
+    """
+    events = []
+
+    def add(dt, who, kind, title, section=""):
+        if dt:
+            events.append({"date": dt, "who": who or "-", "kind": kind,
+                           "title": title, "section": section})
+
+    add(matter.sent_at, matter.sent_by, "milestone", "Sent to the lawyers")
+    add(matter.approved_at, matter.approved_by, "milestone", "Approved - active with lawyers")
+    for s in matter.step_states.all():
+        if not s.done:
+            continue
+        # Completed steps normally carry done_at; fall back so a step never
+        # silently vanishes if the timestamp is missing.
+        add(s.done_at or matter.approved_at or matter.sent_at, s.done_by, "step",
+            STEP_LABELS.get(s.step_key, s.step_key), step_section(s.step_key))
+    if matter.status == matter.CLOSED:
+        add(matter.closed_at, matter.closed_by, "milestone", "Closed / brought back from lawyers")
+
+    events.sort(key=lambda e: e["date"])
+    return events
+
+
+def last_action(matter, timeline=None):
+    """What the lawyers last actually *did* on a matter.
+
+    The newest ticked workflow step; before any step is done, the latest lifecycle
+    milestone, so the answer always says where the matter stands. Pass ``timeline``
+    when the caller has already built the fuller history (comments and route
+    changes included) to reuse it instead of re-reading the steps — the selection
+    rule stays here either way, so the Lawyers card and the weekly report agree.
+
+    Returns ``{"date", "who", "kind", "title", "section"}`` or None.
+    """
+    events = _step_events(matter) if timeline is None else timeline
+    steps = [e for e in events if e["kind"] == "step"]
+    if steps:
+        return steps[-1]
+    return next((e for e in reversed(events) if e["kind"] == "milestone"), None)

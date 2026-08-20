@@ -1,0 +1,10 @@
+# Line endings are pinned per file type rather than left to each committer's
+# core.autocrlf, because the deploy assets break in ways that are hard to spot:
+# a shell script committed with CRLF fails on Linux with "bad interpreter: ^M",
+# and systemd refuses unit files it can't parse.
+*.sh                text eol=lf
+deploy/systemd/*    text eol=lf
+
+# The Windows scheduler scripts want the opposite.
+*.bat               text eol=crlf
+*.vbs               text eol=crlf

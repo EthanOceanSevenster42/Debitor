@@ -1,0 +1,13 @@
+[Unit]
+Description=Hourly Xero sync for the FSA Debtor System
+
+[Timer]
+OnCalendar=hourly
+# Run a missed slot on the next boot instead of silently skipping the hour.
+Persistent=true
+# Don't hit Xero on the exact second every host does.
+RandomizedDelaySec=60
+Unit=fsa-sync.service
+
+[Install]
+WantedBy=timers.target

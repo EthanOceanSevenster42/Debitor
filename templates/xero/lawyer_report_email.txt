@@ -4,11 +4,11 @@
 The detailed report is attached as a PDF.
 
 KPIs:
-- Active matters: {{ kpis.active }}
+- Active matters: {{ kpis.active }}, owing R {{ kpis.owed_active|floatformat:2|intcomma }} in total
 - New this period: {{ kpis.new }}
 - Average completion: {{ kpis.avg_completion }}%
 - In litigation: {{ kpis.in_litigation }} (collections: {{ kpis.in_collections }})
-- Idle 7+ days: {{ kpis.idle_7 }}  |  Idle 14+ days: {{ kpis.idle_14 }}
+- Idle 7+ days: {{ kpis.idle_7 }}  |  Idle 14+ days: {{ kpis.idle_14 }} (R {{ kpis.owed_idle_14|floatformat:2|intcomma }} of debt)
 - Recovered with lawyers: R {{ kpis.recovered_period|floatformat:2|intcomma }} this period, R {{ kpis.recovered_total|floatformat:2|intcomma }} all-time.
 
 Open the Lawyers page: {{ legal_url }}

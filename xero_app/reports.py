@@ -10,6 +10,7 @@ Pending-approval matters are intentionally excluded — that's an administrator
 concern, not something the lawyers' report should surface.
 """
 from datetime import timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.db.models import Sum
@@ -19,8 +20,8 @@ from django.utils import timezone
 
 from . import legal_workflow
 from .mailer import send_app_email
-from .models import (LawyerReportConfig, LegalMatter, RecoveredInvoice,
-                     ReportRecipient)
+from .models import (LawyerReportConfig, LegalMatter, OpenInvoiceSnapshot,
+                     RecoveredInvoice, ReportRecipient)
 from .report_pdf import build_report_pdf
 
 # Litigation = any step past the Collections phase.
@@ -46,13 +47,46 @@ def _severity(days_idle):
     return "ok"
 
 
-def _matter_summary(matter, now):
+def _owed_by_matter(tenant_id, matters):
+    """What each matter's company still owes FSA today, keyed by matter id.
+
+    Resolves on contact_id with a contact_name fallback, the same way the Lawyers
+    page does, so the "Owes" figure on a card and in the report reconcile.
+    """
+    ids = [m.contact_id for m in matters if m.contact_id]
+    by_cid = {r["contact_id"]: r["s"] for r in
+              OpenInvoiceSnapshot.objects
+              .filter(tenant_id=tenant_id, contact_id__in=ids)
+              .values("contact_id").annotate(s=Sum("amount_due"))} if ids else {}
+    names = [m.contact_name for m in matters
+             if m.contact_name and m.contact_id not in by_cid]
+    by_name = {r["contact_name"]: r["s"] for r in
+               OpenInvoiceSnapshot.objects
+               .filter(tenant_id=tenant_id, contact_name__in=names)
+               .values("contact_name").annotate(s=Sum("amount_due"))} if names else {}
+    return {m.id: (by_cid.get(m.contact_id) or by_name.get(m.contact_name) or Decimal(0))
+            for m in matters}
+
+
+def _stage_label(matter, in_litigation):
+    """One line for where the matter stands. Collections matters say just that —
+    the Unopposed/Opposed routes have no bearing until litigation starts, so
+    spelling them out on every row would be noise."""
+    if not in_litigation:
+        return "Collections"
+    return ("Litigation - Summons %s, Application %s" % (
+        "Opposed" if matter.summons_opposed else "Unopposed",
+        "Opposed" if matter.application_opposed else "Unopposed"))
+
+
+def _matter_summary(matter, now, owed=Decimal(0)):
     visible = legal_workflow.visible_step_keys(matter.summons_opposed, matter.application_opposed)
     done_keys = {s.step_key for s in matter.step_states.all() if s.done}
     done = len([k for k in visible if k in done_keys])
     total = len(visible)
     last = _last_activity(matter)
     days_idle = (now - last).days if last else 0
+    in_litigation = bool(done_keys & _LITIGATION_KEYS)
     return {
         "id": matter.id,
         "url": settings.SITE_BASE_URL + reverse("xero_legal_matter", args=[matter.id]),
@@ -62,12 +96,16 @@ def _matter_summary(matter, now):
         "sent_at": matter.sent_at,
         "sent_by": matter.sent_by,
         "approved_at": matter.approved_at,
+        "amount_owed": owed,
         "done": done,
         "total": total,
         "pct": round(done / total * 100) if total else 0,
         "route_summary": (f"Summons: {'Opposed' if matter.summons_opposed else 'Unopposed'} "
                           f"· Application: {'Opposed' if matter.application_opposed else 'Unopposed'}"),
-        "in_litigation": bool(done_keys & _LITIGATION_KEYS),
+        "stage_label": _stage_label(matter, in_litigation),
+        "in_litigation": in_litigation,
+        # What the attorneys last ticked off — same rule as the Lawyers page card.
+        "last_action": legal_workflow.last_action(matter),
         "last_worked": last,
         "days_idle": days_idle,
         "severity": _severity(days_idle),
@@ -80,8 +118,9 @@ def build_lawyer_report(tenant_id, period_days=7, now=None):
     Pending matters are excluded (admin-only)."""
     now = now or timezone.now()
     period_start = now - timedelta(days=period_days)
-    matters = (LegalMatter.objects.filter(tenant_id=tenant_id)
-               .prefetch_related("step_states", "step_comments"))
+    matters = list(LegalMatter.objects.filter(tenant_id=tenant_id)
+                   .prefetch_related("step_states", "step_comments"))
+    owed = _owed_by_matter(tenant_id, matters)
 
     active, new_matters, closed_period = [], [], 0
     for m in matters:
@@ -91,7 +130,7 @@ def build_lawyer_report(tenant_id, period_days=7, now=None):
             continue
         if m.status != LegalMatter.ACTIVE:
             continue  # pending approval is an administrator concern — never shown here
-        summary = _matter_summary(m, now)
+        summary = _matter_summary(m, now, owed.get(m.id, Decimal(0)))
         active.append(summary)
         if m.sent_at and m.sent_at >= period_start:
             new_matters.append(summary)
@@ -112,6 +151,17 @@ def build_lawyer_report(tenant_id, period_days=7, now=None):
     active.sort(key=lambda s: (-s["days_idle"], s["pct"]))   # most urgent first
     new_matters.sort(key=lambda s: s["sent_at"] or now, reverse=True)
 
+    # The report reads worst-first, so the matters are banded by how long they have
+    # been sitting. Each band carries its own count and value, which is what makes
+    # a 50-row list actionable: "42 matters worth R X have not moved in a fortnight".
+    groups = [{"key": key, "label": label, "matters": [s for s in active if s["severity"] == key]}
+              for key, label in (("critical", "Critical - 14+ days idle"),
+                                 ("warning", "Warning - 7 to 13 days idle"),
+                                 ("ok", "On track - worked in the last 7 days"))]
+    for g in groups:
+        g["count"] = len(g["matters"])
+        g["owed"] = sum((s["amount_owed"] for s in g["matters"]), Decimal(0))
+
     kpis = {
         "active": n,
         "new": len(new_matters),
@@ -124,12 +174,17 @@ def build_lawyer_report(tenant_id, period_days=7, now=None):
         "avg_days_idle": avg_days_idle,
         "recovered_total": recovered_total,
         "recovered_period": recovered_period,
+        # Value still in the lawyers' hands, and the slice of it that has gone
+        # quiet — the two numbers the report exists to put in front of someone.
+        "owed_active": sum((s["amount_owed"] for s in active), Decimal(0)),
+        "owed_idle_14": sum((s["amount_owed"] for s in active if s["days_idle"] >= 14), Decimal(0)),
     }
     return {
         "generated_at": now,
         "period_days": period_days,
         "period_start": period_start,
         "active_matters": active,
+        "severity_groups": [g for g in groups if g["count"]],
         "new_matters": new_matters,
         "kpis": kpis,
         "tiles": [("Active", n), ("New", len(new_matters)),
