@@ -88,7 +88,11 @@
     {# ---- WhatsApp templates ---- #}
     <div class="cs-card">
         <h2>&#128241; WhatsApp templates</h2>
-        <p class="cs-sub">WhatsApp uses the body only (no subject). The message opens pre-filled in WhatsApp; the user still presses send.</p>
+        <p class="cs-sub">WhatsApp uses the body only (no subject).
+            {% if whatsapp_api_enabled %}Link a template to an <strong>approved WhatsApp template</strong> below and the button sends it straight to the customer. Left unlinked, it keeps the old behaviour: the message opens pre-filled in WhatsApp and the user presses send.{% else %}The message opens pre-filled in WhatsApp; the user still presses send.{% endif %}</p>
+        {% if whatsapp_api_enabled %}
+        <p class="cs-sub" style="font-size:12px;">WhatsApp only allows free-form text within 24 hours of the customer messaging you, so reminders must go out as a template Meta has approved. The message box below is the wording <em>you</em> see; the approved template is what the customer receives. Create and submit templates in Wati &rarr; Campaigns &rarr; Templates.</p>
+        {% endif %}
 
         {% for t in wa_templates %}
         <form method="post" class="tpl {% if t.is_default %}is-default{% endif %}">
@@ -100,6 +104,19 @@
             </div>
             <label>Template name</label>
             <input type="text" name="name" value="{{ t.name }}">
+            {% if whatsapp_api_enabled %}
+            <label>Approved WhatsApp template <span class="muted" style="font-weight:400;">&mdash; sends automatically when set</span></label>
+            <select name="wati_template_name">
+                <option value="">&mdash; Not linked (opens WhatsApp for the user to send) &mdash;</option>
+                {% for w in wati_templates %}
+                <option value="{{ w.name }}" {% if w.name == t.wati_template_name %}selected{% endif %}>{{ w.name }}{% if w.params %} ({{ w.params|join:", " }}){% endif %}</option>
+                {% endfor %}
+                {# Keep a mapping whose template vanished from Wati visible rather than silently clearing it. #}
+                {% if t.wati_template_name and t.wati_template_name not in wati_template_names %}
+                <option value="{{ t.wati_template_name }}" selected>{{ t.wati_template_name }} (not approved / not found)</option>
+                {% endif %}
+            </select>
+            {% endif %}
             <label>Message</label>
             <textarea name="body">{{ t.body }}</textarea>
             <div class="preview-line"><span class="pl-label">Preview (sample invoice)</span>{{ t.preview_body }}</div>
@@ -122,6 +139,15 @@
             <h3>+ Add a WhatsApp template</h3>
             <label>Template name</label>
             <input type="text" name="name" placeholder="e.g. Friendly nudge">
+            {% if whatsapp_api_enabled %}
+            <label>Approved WhatsApp template <span class="muted" style="font-weight:400;">&mdash; sends automatically when set</span></label>
+            <select name="wati_template_name">
+                <option value="">&mdash; Not linked (opens WhatsApp for the user to send) &mdash;</option>
+                {% for w in wati_templates %}
+                <option value="{{ w.name }}">{{ w.name }}{% if w.params %} ({{ w.params|join:", " }}){% endif %}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
             <label>Message</label>
             <textarea name="body" placeholder="Type the WhatsApp message…">{{ default_wa_body }}</textarea>
             <div class="tpl-actions"><button type="submit" class="btn btn-primary btn-sm">Add WhatsApp template</button></div>

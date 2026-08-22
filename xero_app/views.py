@@ -39,6 +39,7 @@ from .xero_client import (fetch_invoice_history, fetch_contact, clean_contact,
 from . import outreach
 from . import reports
 from . import notifications
+from . import wati
 from accounts.decorators import super_admin_required, role_required
 
 User = get_user_model()
@@ -749,14 +750,20 @@ def _whatsapp_options(templates, number, fields):
     WhatsApp with the message pre-filled for the user to pick the recipient, so
     every invoice has a working WhatsApp action. Falls back to the built-in default
     wording when no templates exist for the channel."""
+    api_ready = wati.is_configured()
     out = []
     for t in templates:
         text = _render_wa_message(t.body or DEFAULT_WA_TEMPLATE, **fields)
         url = "https://wa.me/%s?%s" % (number, urlencode({"text": text}, quote_via=quote))
-        out.append({"id": t.id, "label": t.name, "url": url})
+        # `api` decides which of the two flows the button uses: send it ourselves
+        # through WATI, or hand the user a pre-filled wa.me link as before. It
+        # needs BOTH a configured account and this template mapped to an approved
+        # WhatsApp template, since Meta will not accept arbitrary wording.
+        out.append({"id": t.id, "label": t.name, "url": url,
+                    "api": bool(api_ready and t.wati_template_name and number)})
     if not out:
         text = _render_wa_message(DEFAULT_WA_TEMPLATE, **fields)
-        out.append({"id": 0, "label": "Standard reminder",
+        out.append({"id": 0, "label": "Standard reminder", "api": False,
                     "url": "https://wa.me/%s?%s" % (number, urlencode({"text": text}, quote_via=quote))})
     return out
 
@@ -1658,6 +1665,85 @@ def xero_log_whatsapp(request, invoice_id):
     note = f"WhatsApp reminder sent{detail}"
     _record_contact(request, tenant_id, invoice_id, CallLog.ACTION_WHATSAPP, note)
     return JsonResponse({"ok": True})
+
+
+def _wati_days_phrase(days):
+    """'30 days' / '1 day' for the approved template's {days_overdue} variable.
+
+    Deliberately NOT _days_overdue_phrase(), which returns '30 days overdue' —
+    the approved template already supplies the word 'overdue' around it, so the
+    phrase version would render '30 days overdue overdue'."""
+    n = days or 0
+    if n < 0:
+        n = 0
+    return f"{n} day{'s' if n != 1 else ''}"
+
+
+@login_required
+@require_POST
+def xero_send_whatsapp(request, invoice_id):
+    """Send this invoice's WhatsApp reminder through WATI, then log it.
+
+    Used only for templates mapped to an approved WATI template; anything else
+    still goes out via the wa.me link and posts to xero_log_whatsapp instead.
+
+    The reminder is logged ONLY when the send succeeded. Logging an unsent
+    reminder would clear the follow-up prompt for seven days and show a ✓ on the
+    invoice, so nobody would chase a debtor who was never actually contacted."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return JsonResponse({"error": "Not connected to Xero."}, status=400)
+    if not wati.is_configured():
+        return JsonResponse({"error": "WhatsApp sending is not configured."}, status=400)
+
+    snap = (OpenInvoiceSnapshot.objects
+            .filter(tenant_id=tenant_id, invoice_id=invoice_id)
+            .values("invoice_number", "contact_id", "contact_name", "contact_email",
+                    "amount_due", "days_past_due", "due_date").first())
+    if not snap:
+        return JsonResponse({"error": "Invoice not found."}, status=404)
+
+    tpl = None
+    tpl_id = (request.POST.get("template_id") or "").strip()
+    if tpl_id.isdigit() and int(tpl_id):
+        tpl = MessageTemplate.objects.filter(id=int(tpl_id),
+                                             channel=MessageTemplate.CHANNEL_WHATSAPP).first()
+    if tpl is None:
+        tpl = next(iter(_ordered_templates(MessageTemplate.CHANNEL_WHATSAPP)), None)
+    if tpl is None or not tpl.wati_template_name:
+        return JsonResponse({"error": "This template is not linked to an approved "
+                                      "WhatsApp template."}, status=400)
+
+    # Prefer the number the page already resolved; fall back to the cached Xero
+    # contact so a stale page cannot send to the wrong debtor.
+    number = _wa_format_phone(request.POST.get("to") or "")
+    if not number:
+        cached = ContactDetail.objects.filter(
+            tenant_id=tenant_id, contact_id=snap["contact_id"] or "").first()
+        data = json.loads(cached.data_json) if cached and cached.data_json else {}
+        number = _pick_whatsapp_number(data)
+    if not number:
+        return JsonResponse({"error": "No WhatsApp number on file for this debtor."}, status=400)
+
+    amount = snap["amount_due"]
+    params = {
+        "name": snap["contact_name"] or "",
+        "invoice_number": snap["invoice_number"] or "",
+        "amount": f"{float(amount):,.2f}" if amount is not None else "0.00",
+        "days_overdue": _wati_days_phrase(snap["days_past_due"]),
+        "days_past_due": snap["days_past_due"] or 0,
+        "due_date": snap["due_date"].isoformat() if snap["due_date"] else "",
+    }
+    try:
+        result = wati.send_template_message(number, tpl.wati_template_name, params)
+    except wati.WatiError as exc:
+        return JsonResponse({"error": str(exc)}, status=502)
+
+    queued = result.get("status") == "QUEUED"
+    note = (f"WhatsApp reminder sent to +{number} via {tpl.name}"
+            + (" (delivery not yet confirmed)" if queued else ""))
+    _record_contact(request, tenant_id, invoice_id, CallLog.ACTION_WHATSAPP, note)
+    return JsonResponse({"ok": True, "status": result.get("status"), "to": number})
 
 
 def _record_contact(request, tenant_id, invoice_id, action_type, note):
@@ -3224,6 +3310,8 @@ def xero_communication_setup(request):
                 channel=channel, name=name[:120],
                 subject=(request.POST.get("subject") or "").strip() if channel == MessageTemplate.CHANNEL_EMAIL else "",
                 body=(request.POST.get("body") or "").strip(),
+                wati_template_name=((request.POST.get("wati_template_name") or "").strip()[:200]
+                                    if channel == MessageTemplate.CHANNEL_WHATSAPP else ""),
                 is_default=first, sort_order=last_order + 1, updated_by=who,
             )
             messages.success(request, f"Template “{name}” added.")
@@ -3234,6 +3322,8 @@ def xero_communication_setup(request):
                 t.name = ((request.POST.get("name") or "").strip() or t.name)[:120]
                 if t.channel == MessageTemplate.CHANNEL_EMAIL:
                     t.subject = (request.POST.get("subject") or "").strip()
+                else:
+                    t.wati_template_name = (request.POST.get("wati_template_name") or "").strip()[:200]
                 t.body = (request.POST.get("body") or "").strip()
                 t.updated_by = who
                 t.save()
@@ -3266,6 +3356,10 @@ def xero_communication_setup(request):
 
     email_templates = with_preview(_ordered_templates(MessageTemplate.CHANNEL_EMAIL))
     wa_templates = with_preview(_ordered_templates(MessageTemplate.CHANNEL_WHATSAPP))
+    # Approved WhatsApp templates to choose from. Only these can be sent by the
+    # app: Meta refuses free-form wording to a debtor who has not messaged us in
+    # the last 24 hours, so the local body is a preview and this is what ships.
+    approved_wa = [t for t in wati.list_templates() if t["status"] == "approved"]
     return render(request, "xero/communication_setup.html", {
         "email_templates": email_templates,
         "wa_templates": wa_templates,
@@ -3273,6 +3367,9 @@ def xero_communication_setup(request):
         "default_wa_body": DEFAULT_WA_TEMPLATE,
         "default_email_subject": DEFAULT_EMAIL_SUBJECT,
         "default_email_body": DEFAULT_EMAIL_BODY,
+        "whatsapp_api_enabled": wati.is_configured(),
+        "wati_templates": approved_wa,
+        "wati_template_names": [t["name"] for t in approved_wa],
     })
 
 

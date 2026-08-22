@@ -710,6 +710,40 @@ function logWhatsApp(invoiceId, toNumber, el) {
       .catch(function () { /* logging failures shouldn't block the user */ });
 }
 
+// --- WhatsApp reminder sending (WATI) ---
+// Used when the chosen template is linked to an approved WhatsApp template, so
+// the app delivers the message itself instead of opening wa.me.
+//
+// Unlike logWhatsApp above, NOTHING is logged unless the send actually
+// succeeded: the server only writes the CallLog once WhatsApp accepted the
+// message. A tick against an unsent reminder would clear this invoice's
+// follow-up prompt for seven days, so nobody would chase a debtor who was
+// never contacted. Failures surface to the user instead of failing quietly.
+function sendWhatsApp(invoiceId, toNumber, templateId, el) {
+    if (el && el.dataset.sending === '1') return;      // guard double-clicks
+    var original = el ? el.innerHTML : '';
+    if (el) { el.dataset.sending = '1'; el.style.pointerEvents = 'none'; el.textContent = 'Sending…'; }
+    var fd = new FormData();
+    fd.append('csrfmiddlewaretoken', window.CSRF_TOKEN);
+    if (toNumber) fd.append('to', toNumber);
+    if (templateId) fd.append('template_id', templateId);
+    fetch('/xero/invoice/' + encodeURIComponent(invoiceId) + '/whatsapp-send/', {
+        method: 'POST', body: fd, credentials: 'same-origin',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+    }).then(function (r) {
+        return r.json().catch(function () { return {}; })
+                .then(function (d) { return {ok: r.ok, data: d}; });
+    }).then(function (res) {
+        if (!res.ok || !res.data.ok) {
+            throw new Error(res.data.error || 'Could not send the WhatsApp reminder.');
+        }
+        if (el) refreshDebtorStatement(el);           // redraws with the ✓ tick
+    }).catch(function (err) {
+        if (el) { el.dataset.sending = ''; el.style.pointerEvents = ''; el.innerHTML = original; }
+        alert(err.message || 'Could not send the WhatsApp reminder.');
+    });
+}
+
 // --- Email reminder logging ---
 // Called by the Email button/menu right after the mailto: link opens the user's
 // mail client. Records that an email was sent (clears the email task for 7 days)

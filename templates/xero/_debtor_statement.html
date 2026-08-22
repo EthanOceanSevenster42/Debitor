@@ -190,21 +190,36 @@ current_full_path.
                 {# WhatsApp shows on every invoice with a number (any cadence): recently sent -> tick, else send button. #}
                 {% if inv.whatsapped_recently %}<span class="called-tag" title="WhatsApp logged in the last 7 days">&#10003; WhatsApp <a href="#" class="undo-link" title="Undo &mdash; remove this WhatsApp mark" onclick="event.preventDefault(); event.stopPropagation(); unlogContact('{{ inv.invoice_id }}', 'whatsapp', this);">&#10005;</a></span>
                 {% elif inv.wa_options %}
+                    {% comment %}o.api = this template is linked to an approved WhatsApp
+                    template, so the app sends it directly. Otherwise it stays a wa.me link
+                    the user sends by hand — Meta will not accept unapproved wording over
+                    the API. ({# #} is single-line only, hence the comment tag.){% endcomment %}
                     {% if inv.wa_options|length > 1 %}
                     <span class="tpl-box">
                         <button type="button" class="wa-btn" onclick="event.stopPropagation(); toggleTplPop(this);" title="Choose a WhatsApp template to send">&#128241; WhatsApp &#9662;</button>
                         <div class="tpl-pop" role="menu">
                             {% for o in inv.wa_options %}
+                            {% if o.api %}
+                            <a href="#" role="menuitem"
+                               onclick="event.preventDefault(); event.stopPropagation(); closeTplPops(); sendWhatsApp('{{ inv.invoice_id }}', '{{ d.whatsapp_number }}', '{{ o.id }}', this);">{{ o.label }}</a>
+                            {% else %}
                             <a href="{{ o.url }}" target="_blank" rel="noopener" role="menuitem"
                                onclick="event.stopPropagation(); closeTplPops(); logWhatsApp('{{ inv.invoice_id }}', '{{ d.whatsapp_number }}', this);">{{ o.label }}</a>
+                            {% endif %}
                             {% endfor %}
                         </div>
                     </span>
+                    {% else %}{% with o=inv.wa_options.0 %}
+                    {% if o.api %}
+                    <a class="wa-btn" href="#"
+                       onclick="event.preventDefault(); event.stopPropagation(); sendWhatsApp('{{ inv.invoice_id }}', '{{ d.whatsapp_number }}', '{{ o.id }}', this);"
+                       title="Send this WhatsApp reminder to the customer now">&#128241; WhatsApp</a>
                     {% else %}
                     <a class="wa-btn" href="{{ inv.wa_default_url }}" target="_blank" rel="noopener"
                        onclick="event.stopPropagation(); logWhatsApp('{{ inv.invoice_id }}', '{{ d.whatsapp_number }}', this);"
                        title="Send the customer a WhatsApp reminder &mdash; marks WhatsApp as actioned for 7 days">&#128241; WhatsApp</a>
                     {% endif %}
+                    {% endwith %}{% endif %}
                 {% else %}<span class="wa-btn disabled" title="No WhatsApp number on file for this debtor in Xero">&#128241; No number</span>{% endif %}
 
                 {# Email: one template -> direct send; several -> popup to pick. #}

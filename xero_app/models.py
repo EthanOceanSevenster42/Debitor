@@ -476,6 +476,13 @@ class MessageTemplate(models.Model):
     # subject is used by the email channel only; WhatsApp ignores it.
     subject = models.TextField(blank=True, default="")
     body = models.TextField(blank=True, default="")
+    # WhatsApp only: the Meta-APPROVED template on the WATI account that this
+    # wording maps to. WhatsApp refuses free-form text to someone who has not
+    # messaged us in the last 24 hours, so a reminder can only go out as an
+    # approved template — `body` above is the operator-facing preview, and this
+    # names what actually ships. Blank keeps the old behaviour for this template:
+    # a wa.me link the user sends by hand.
+    wati_template_name = models.CharField(max_length=200, blank=True, default="")
     is_default = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
@@ -486,6 +493,11 @@ class MessageTemplate(models.Model):
 
     def __str__(self):
         return f"{self.get_channel_display()}: {self.name}"
+
+    @property
+    def sends_via_api(self):
+        """True when this template can be delivered by the app itself."""
+        return bool(self.channel == self.CHANNEL_WHATSAPP and self.wati_template_name)
 
 
 class SystemSetting(models.Model):
