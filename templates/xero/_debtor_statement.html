@@ -187,27 +187,31 @@ current_full_path.
                 </form>
                 {% elif inv.called_recently %}<span class="called-tag" title="Call logged in the last 7 days">&#10003; called <a href="#" class="undo-link" title="Undo &mdash; remove this call mark" onclick="event.preventDefault(); event.stopPropagation(); unlogContact('{{ inv.invoice_id }}', 'call', this);">&#10005;</a></span>{% endif %}
 
-                {# WhatsApp shows on every invoice (any cadence): recently sent -> tick, else a
+                {% comment %}
+                   WhatsApp shows on every invoice (any cadence): recently sent -> tick, else a
                    send button. The app delivers the message itself, so pressing it never
                    opens WhatsApp Web or the phone app — it just sends. wa_options only ever
                    holds reminders that can genuinely go out; when none can, wa_blocked says
-                   why and the button is shown disabled with that reason. #}
-                {% if inv.whatsapped_recently %}<span class="called-tag" title="WhatsApp logged in the last 7 days">&#10003; WhatsApp <a href="#" class="undo-link" title="Undo &mdash; remove this WhatsApp mark" onclick="event.preventDefault(); event.stopPropagation(); unlogContact('{{ inv.invoice_id }}', 'whatsapp', this);">&#10005;</a></span>
+                   why and the button is shown disabled with that reason. The title always
+                   names the number the send would go to, so the operator can see who is
+                   being messaged before clicking.
+                {% endcomment %}
+                {% if inv.whatsapped_recently %}<span class="called-tag" title="WhatsApp logged in the last 7 days{% if d.whatsapp_number %} &mdash; sent to +{{ d.whatsapp_number }}{% endif %}">&#10003; WhatsApp <a href="#" class="undo-link" title="Undo &mdash; remove this WhatsApp mark" onclick="event.preventDefault(); event.stopPropagation(); unlogContact('{{ inv.invoice_id }}', 'whatsapp', this);">&#10005;</a></span>
                 {% elif inv.wa_options|length > 1 %}
                     <span class="tpl-box">
-                        <button type="button" class="wa-btn" onclick="event.stopPropagation(); toggleTplPop(this);" title="Choose a WhatsApp reminder to send">&#128241; WhatsApp &#9662;</button>
+                        <button type="button" class="wa-btn" onclick="event.stopPropagation(); toggleTplPop(this);" title="Choose a WhatsApp reminder to send to {{ d.name }}{% if d.whatsapp_number %} &mdash; +{{ d.whatsapp_number }}{% endif %}">&#128241; WhatsApp &#9662;</button>
                         <div class="tpl-pop" role="menu">
                             {% for o in inv.wa_options %}
-                            <a href="#" role="menuitem" title="{{ o.preview }}"
+                            <a href="#" role="menuitem" title="Send to {{ d.name }}{% if d.whatsapp_number %} (+{{ d.whatsapp_number }}){% endif %} &mdash; {{ o.preview }}"
                                onclick="event.preventDefault(); event.stopPropagation(); closeTplPops(); sendWhatsApp('{{ inv.invoice_id }}', '{{ d.whatsapp_number }}', '{{ o.id }}', this);">{{ o.label }}</a>
                             {% endfor %}
                         </div>
                     </span>
                 {% elif inv.wa_options %}{% with o=inv.wa_options.0 %}
-                    <button type="button" class="wa-btn" title="Send this WhatsApp reminder now &mdash; {{ o.preview }}"
+                    <button type="button" class="wa-btn" title="Send this WhatsApp reminder now to {{ d.name }}{% if d.whatsapp_number %} &mdash; +{{ d.whatsapp_number }}{% endif %} &mdash; {{ o.preview }}"
                             onclick="event.stopPropagation(); sendWhatsApp('{{ inv.invoice_id }}', '{{ d.whatsapp_number }}', '{{ o.id }}', this);">&#128241; WhatsApp</button>
                 {% endwith %}
-                {% else %}<span class="wa-btn disabled" title="{{ inv.wa_blocked }}">&#128241; WhatsApp</span>{% endif %}
+                {% else %}<span class="wa-btn disabled" title="{{ inv.wa_blocked }}{% if d.whatsapp_number %} &mdash; number on file: +{{ d.whatsapp_number }}{% else %} &mdash; no WhatsApp number on file{% endif %}">&#128241; WhatsApp</span>{% endif %}
 
                 {# Email: one template -> direct send; several -> popup to pick. #}
                 {% if inv.needs_email %}
@@ -240,12 +244,14 @@ current_full_path.
                 <div class="row-menu" role="menu">
                     <a href="{% url 'xero_invoice_report' inv.invoice_id %}" target="_blank" rel="noopener" role="menuitem"
                        onclick="event.stopPropagation(); closeAllRowMenus();">&#128196; Report</a>
-                    {# WhatsApp the client at any time; one row per template. Sends from the
-                       server like the inline button — it does not open WhatsApp. #}
+                    {% comment %}
+                       WhatsApp the client at any time; one row per template. Sends from the
+                       server like the inline button — it does not open WhatsApp.
+                    {% endcomment %}
                     {% for o in inv.wa_options %}
                     <button type="button" class="row-menu-item whatsapp" role="menuitem"
                             onclick="event.stopPropagation(); closeAllRowMenus(); sendWhatsApp('{{ inv.invoice_id }}', '{{ d.whatsapp_number }}', '{{ o.id }}', this);"
-                            title="Send this WhatsApp reminder now; also resets the 7-day follow-up flag">&#128241; WhatsApp{% if inv.wa_options|length > 1 %}: {{ o.label }}{% else %} again{% endif %}</button>
+                            title="Send this WhatsApp reminder now to {{ d.name }}{% if d.whatsapp_number %} &mdash; +{{ d.whatsapp_number }}{% endif %}; also resets the 7-day follow-up flag">&#128241; WhatsApp{% if inv.wa_options|length > 1 %}: {{ o.label }}{% else %} again{% endif %}</button>
                     {% empty %}
                     <span class="row-menu-item whatsapp disabled" role="menuitem" aria-disabled="true"
                           title="{{ inv.wa_blocked }}">&#128241; WhatsApp unavailable</span>
