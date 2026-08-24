@@ -30,6 +30,8 @@ FRIENDLY_LABELS = {
     # Debtors / collections
     'xero_allocate_debtor': 'Changed a debtor allocation',
     'xero_log_call': 'Logged a call',
+    'xero_send_whatsapp': 'Sent a WhatsApp reminder',
+    # Retired with the wa.me flow; kept so historical audit rows still read well.
     'xero_log_whatsapp': 'Logged a WhatsApp',
     'xero_log_email': 'Logged an email',
     'xero_unlog_contact': 'Removed a contact mark',

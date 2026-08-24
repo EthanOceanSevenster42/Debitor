@@ -228,8 +228,9 @@ REPORT_RECIPIENTS = [e.strip() for e in os.environ.get('REPORT_RECIPIENTS', '').
 SITE_BASE_URL = os.environ.get('SITE_BASE_URL', 'http://localhost:8000').rstrip('/')
 
 # ---- WhatsApp (WATI) ----
-# Powers the per-invoice WhatsApp reminder button. With these unset the button
-# keeps its original behaviour: a wa.me link the user sends by hand.
+# Powers the per-invoice WhatsApp reminder button, which sends from the server.
+# With these unset there is no other way to send, so the button is shown disabled
+# with the reason rather than falling back to anything.
 # The newer "wati_..." tokens only work on the v3 tree and carry their own
 # tenant, so the base URL has no tenant id in it.
 WATI_BASE_URL = os.environ.get('WATI_BASE_URL', 'https://live-mt-server.wati.io/api/ext/v3').rstrip('/')
@@ -243,7 +244,3 @@ WATI_TIMEOUT = int(os.environ.get('WATI_TIMEOUT', '20'))
 # button click under ~3s while still catching the common failures.
 WATI_VERIFY_ATTEMPTS = int(os.environ.get('WATI_VERIFY_ATTEMPTS', '3'))
 WATI_VERIFY_DELAY = float(os.environ.get('WATI_VERIFY_DELAY', '1.0'))
-
-# True when WhatsApp can actually send — templates gate on this to decide
-# between the API button and the wa.me fallback.
-WHATSAPP_ENABLED = bool(WATI_TOKEN and WATI_BASE_URL)
