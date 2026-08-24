@@ -67,6 +67,8 @@
     .wa-btn:hover { background: #16a34a; color: #fff; text-decoration: none; }
     .wa-btn.disabled { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; cursor: not-allowed; }
     .wa-btn.disabled:hover { background: #f1f5f9; color: #94a3b8; }
+    /* The WhatsApp action is a <button>, not a link — it sends rather than navigating. */
+    button.wa-btn { font-family: inherit; line-height: inherit; cursor: pointer; }
     /* Email inline action button — same shape as Call/WhatsApp, blue family. */
     .email-btn { display: inline-block; margin-left: 6px; padding: 1px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #e0effe; color: #1e40af; border: 1px solid #93c5fd; text-decoration: none; white-space: nowrap; }
     .email-btn:hover { background: #1d4ed8; color: #fff; text-decoration: none; }
@@ -696,33 +698,20 @@ function submitHandover(e) {
     return true;
 }
 
-// --- WhatsApp reminder logging ---
-// Called by the WhatsApp button right after the wa.me link opens. comment_at
-// captures the time it was triggered; we also record the recipient phone.
-function logWhatsApp(invoiceId, toNumber, el) {
-    var fd = new FormData();
-    fd.append('csrfmiddlewaretoken', window.CSRF_TOKEN);
-    if (toNumber) fd.append('to', toNumber);
-    fetch('/xero/invoice/' + encodeURIComponent(invoiceId) + '/whatsapp-sent/', {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: {'X-Requested-With': 'XMLHttpRequest'},
-    }).then(function () { if (el) refreshDebtorStatement(el); })
-      .catch(function () { /* logging failures shouldn't block the user */ });
-}
-
-// --- WhatsApp reminder sending (WATI) ---
-// Used when the chosen template is linked to an approved WhatsApp template, so
-// the app delivers the message itself instead of opening wa.me.
+// --- WhatsApp reminder sending (WhatsApp Business API) ---
+// The one and only WhatsApp path: the server delivers the message, so pressing
+// the button never opens WhatsApp Web or the phone app.
 //
-// Unlike logWhatsApp above, NOTHING is logged unless the send actually
-// succeeded: the server only writes the CallLog once WhatsApp accepted the
-// message. A tick against an unsent reminder would clear this invoice's
-// follow-up prompt for seven days, so nobody would chase a debtor who was
-// never contacted. Failures surface to the user instead of failing quietly.
+// NOTHING is logged unless the send actually succeeded — the server only writes
+// the CallLog once WhatsApp accepted the message. A tick against an unsent
+// reminder would clear this invoice's follow-up prompt for seven days, so nobody
+// would chase a debtor who was never contacted. Failures surface to the user
+// instead of failing quietly.
 function sendWhatsApp(invoiceId, toNumber, templateId, el) {
-    if (el && el.dataset.sending === '1') return;      // guard double-clicks
-    var original = el ? el.innerHTML : '';
-    if (el) { el.dataset.sending = '1'; el.style.pointerEvents = 'none'; el.textContent = 'Sending…'; }
+    var btn = waProgressTarget(el);
+    if (btn && btn.dataset.sending === '1') return;    // guard double-clicks
+    var original = btn ? btn.innerHTML : '';
+    if (btn) { btn.dataset.sending = '1'; btn.style.pointerEvents = 'none'; btn.textContent = 'Sending…'; }
     var fd = new FormData();
     fd.append('csrfmiddlewaretoken', window.CSRF_TOKEN);
     if (toNumber) fd.append('to', toNumber);
@@ -737,11 +726,23 @@ function sendWhatsApp(invoiceId, toNumber, templateId, el) {
         if (!res.ok || !res.data.ok) {
             throw new Error(res.data.error || 'Could not send the WhatsApp reminder.');
         }
-        if (el) refreshDebtorStatement(el);           // redraws with the ✓ tick
+        if (btn) refreshDebtorStatement(btn);          // redraws with the ✓ tick
     }).catch(function (err) {
-        if (el) { el.dataset.sending = ''; el.style.pointerEvents = ''; el.innerHTML = original; }
+        if (btn) { btn.dataset.sending = ''; btn.style.pointerEvents = ''; btn.innerHTML = original; }
         alert(err.message || 'Could not send the WhatsApp reminder.');
     });
+}
+
+// Where to show "Sending…". A template picked from the ▾ popup or the ⋮ row menu
+// is clicked in a panel that closes immediately, so progress goes on the control
+// that opened it instead of on an element the user can no longer see.
+function waProgressTarget(el) {
+    if (!el || !el.closest) return el;
+    var pop = el.closest('.tpl-pop');
+    if (pop && pop.parentElement) return pop.parentElement.querySelector('.wa-btn') || el;
+    var menu = el.closest('.row-menu');
+    if (menu && menu.parentElement) return menu.parentElement.querySelector('.row-menu-btn') || el;
+    return el;
 }
 
 // --- Email reminder logging ---

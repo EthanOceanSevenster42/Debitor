@@ -41,8 +41,9 @@ class WatiError(RuntimeError):
 
 
 def is_configured():
-    """True when a token and base URL are present. Views gate on this so the
-    app falls back to the wa.me flow instead of erroring when WATI is unset."""
+    """True when a token and base URL are present. Views gate on this so an
+    unconfigured account shows the button disabled with a reason, rather than
+    offering a send that can only fail."""
     return bool(getattr(settings, "WATI_TOKEN", "") and getattr(settings, "WATI_BASE_URL", ""))
 
 

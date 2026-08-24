@@ -50,9 +50,9 @@ urlpatterns = [
     path("invoice/<str:invoice_id>/comment/", views.xero_add_comment, name="xero_add_comment"),
     path("invoice/<str:invoice_id>/report/", views.xero_invoice_report, name="xero_invoice_report"),
     path("invoice/<str:invoice_id>/online/", views.xero_invoice_online, name="xero_invoice_online"),
-    path("invoice/<str:invoice_id>/whatsapp-sent/", views.xero_log_whatsapp, name="xero_log_whatsapp"),
-    # Sends the reminder itself (WATI) and logs it only if it went out; the
-    # whatsapp-sent route above stays for the wa.me flow, which the user sends.
+    # The only WhatsApp route: the app sends the reminder itself and logs it only
+    # if it went out. (The old whatsapp-sent route logged a wa.me link the user
+    # pressed send on by hand; the button no longer opens WhatsApp at all.)
     path("invoice/<str:invoice_id>/whatsapp-send/", views.xero_send_whatsapp, name="xero_send_whatsapp"),
     path("company-report/", views.xero_company_report, name="xero_company_report"),
     path("manual/", views.xero_manual, name="xero_manual"),

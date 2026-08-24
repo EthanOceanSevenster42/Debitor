@@ -405,9 +405,10 @@ DEFAULT_WA_TEMPLATE = (
 class WhatsAppTemplate(models.Model):
     """Editable message template used by the per-invoice WhatsApp button.
 
-    A single row holds the template. Placeholders use {name}, {invoice_number},
-    {amount}, {days_past_due}, {days_overdue} and {due_date} (rendered
-    server-side before the wa.me URL is built)."""
+    Superseded by MessageTemplate; kept because the data migration seeds this
+    row's wording in as the WhatsApp channel's first default. Placeholders use
+    {name}, {invoice_number}, {amount}, {days_past_due}, {days_overdue} and
+    {due_date}, substituted server-side."""
     template_text = models.TextField(blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.CharField(max_length=255, blank=True, default="")
@@ -480,8 +481,8 @@ class MessageTemplate(models.Model):
     # wording maps to. WhatsApp refuses free-form text to someone who has not
     # messaged us in the last 24 hours, so a reminder can only go out as an
     # approved template — `body` above is the operator-facing preview, and this
-    # names what actually ships. Blank keeps the old behaviour for this template:
-    # a wa.me link the user sends by hand.
+    # names what actually ships. Blank means this template cannot be sent, so the
+    # per-invoice WhatsApp button does not offer it at all.
     wati_template_name = models.CharField(max_length=200, blank=True, default="")
     is_default = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)

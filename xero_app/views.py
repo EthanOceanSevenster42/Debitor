@@ -675,9 +675,10 @@ def _channel_due_map(tenant_id):
 
 
 def _wa_format_phone(num):
-    """Reduce a phone string to digits suitable for wa.me. Treats a 10-digit
-    SA mobile starting with 0 as +27 (so '082 123 4567' -> '27821234567').
-    Anything already in international form is kept as-is. Empty if unusable."""
+    """Reduce a phone string to the international digits WhatsApp wants (no '+').
+    Treats a 10-digit SA mobile starting with 0 as +27 (so '082 123 4567' ->
+    '27821234567'). Anything already in international form is kept as-is. Empty
+    if unusable."""
     digits = "".join(c for c in (num or "") if c.isdigit())
     if not digits:
         return ""
@@ -745,27 +746,32 @@ def _ordered_templates(channel):
 
 
 def _whatsapp_options(templates, number, fields):
-    """Build [{id,label,url}] wa.me links — one per template — for an invoice.
-    When no number is on file we still return links: a number-less wa.me URL opens
-    WhatsApp with the message pre-filled for the user to pick the recipient, so
-    every invoice has a working WhatsApp action. Falls back to the built-in default
-    wording when no templates exist for the channel."""
-    api_ready = wati.is_configured()
-    out = []
-    for t in templates:
-        text = _render_wa_message(t.body or DEFAULT_WA_TEMPLATE, **fields)
-        url = "https://wa.me/%s?%s" % (number, urlencode({"text": text}, quote_via=quote))
-        # `api` decides which of the two flows the button uses: send it ourselves
-        # through WATI, or hand the user a pre-filled wa.me link as before. It
-        # needs BOTH a configured account and this template mapped to an approved
-        # WhatsApp template, since Meta will not accept arbitrary wording.
-        out.append({"id": t.id, "label": t.name, "url": url,
-                    "api": bool(api_ready and t.wati_template_name and number)})
+    """Return (options, blocked_reason) for an invoice's WhatsApp button.
+
+    `options` is [{id, label, preview}] — one per template the app can actually
+    deliver — default first. Pressing one sends the reminder from the server;
+    nothing opens WhatsApp Web or the phone app any more, so there is no wa.me
+    link to build here. `preview` is the local wording with this invoice's values
+    filled in; it is only a tooltip, because what ships is the Meta-approved
+    template the local one is mapped to.
+
+    An option is offered only when it can genuinely be sent. When none can,
+    `blocked_reason` says what to fix, so the button explains itself instead of
+    failing on click."""
+    if not wati.is_configured():
+        return [], ("WhatsApp sending is not set up — add the WhatsApp Business "
+                    "details in Communication Setup.")
+    if not number:
+        return [], "No WhatsApp number on file for this debtor in Xero."
+    # Meta refuses free-form text to someone who has not messaged us in the last
+    # 24 hours, so only a template mapped to an approved one can go out.
+    out = [{"id": t.id, "label": t.name,
+            "preview": _render_wa_message(t.body or DEFAULT_WA_TEMPLATE, **fields)}
+           for t in templates if t.wati_template_name]
     if not out:
-        text = _render_wa_message(DEFAULT_WA_TEMPLATE, **fields)
-        out.append({"id": 0, "label": "Standard reminder", "api": False,
-                    "url": "https://wa.me/%s?%s" % (number, urlencode({"text": text}, quote_via=quote))})
-    return out
+        return [], ("No WhatsApp template is linked to an approved WhatsApp "
+                    "template — link one in Communication Setup.")
+    return out, ""
 
 
 def _email_options(templates, address, fields):
@@ -1648,25 +1654,6 @@ def xero_handover_unmark(request):
     return redirect(request.POST.get("next") or "xero_handover")
 
 
-@login_required
-@require_POST
-def xero_log_whatsapp(request, invoice_id):
-    """Record that a user sent a WhatsApp reminder for this invoice.
-
-    Creates a CallLog row tagged as the WhatsApp channel (so only the WhatsApp
-    follow-up flag on this invoice clears for seven days — the Call and Email
-    prompts stay outstanding) AND an InvoiceComment so the action shows on the
-    invoice's lifecycle with the time it was triggered and the recipient phone."""
-    tenant_id = _current_tenant_id(request)
-    if not tenant_id:
-        return JsonResponse({"error": "Not connected to Xero."}, status=400)
-    to_number = (request.POST.get("to") or "").strip()
-    detail = f" to +{to_number}" if to_number else ""
-    note = f"WhatsApp reminder sent{detail}"
-    _record_contact(request, tenant_id, invoice_id, CallLog.ACTION_WHATSAPP, note)
-    return JsonResponse({"ok": True})
-
-
 def _wati_days_phrase(days):
     """'30 days' / '1 day' for the approved template's {days_overdue} variable.
 
@@ -1684,8 +1671,10 @@ def _wati_days_phrase(days):
 def xero_send_whatsapp(request, invoice_id):
     """Send this invoice's WhatsApp reminder through WATI, then log it.
 
-    Used only for templates mapped to an approved WATI template; anything else
-    still goes out via the wa.me link and posts to xero_log_whatsapp instead.
+    This is the only way a WhatsApp reminder leaves the app. The button used to
+    open a wa.me link and take the user's word that they pressed send; now the
+    server delivers it, so a template that is not mapped to an approved WhatsApp
+    template is simply not offered rather than falling back to a hand-sent link.
 
     The reminder is logged ONLY when the send succeeded. Logging an unsent
     reminder would clear the follow-up prompt for seven days and show a ✓ on the
@@ -2594,10 +2583,10 @@ def xero_debtor_statement(request):
     whatsapp_number = _pick_whatsapp_number(cached_data)
     email_address = _pick_email(cached_data, fallback=contact_email)
 
-    # Build the per-invoice WhatsApp / Email reminder links — one ready-made URL
-    # per saved template, default first — so the row can offer a template dropdown
-    # that just swaps the button's href. Each URL embeds the template wording with
-    # this invoice's values substituted in.
+    # Build the per-invoice reminder actions — one entry per saved template,
+    # default first — so the row can offer a template dropdown. Email is still a
+    # ready-made mailto: URL the user's mail client opens; WhatsApp is sent by the
+    # app itself, so its entries carry a template id to post back instead of a URL.
     wa_templates = _ordered_templates(MessageTemplate.CHANNEL_WHATSAPP)
     email_templates = _ordered_templates(MessageTemplate.CHANNEL_EMAIL)
     display_name = contact_name or cid
@@ -2611,9 +2600,9 @@ def xero_debtor_statement(request):
             days_overdue=_days_overdue_phrase(inv["days_past_due"]),
             due_date=inv["due_date"].isoformat() if inv["due_date"] else "",
         )
-        inv["wa_options"] = _whatsapp_options(wa_templates, whatsapp_number, fields)
+        inv["wa_options"], inv["wa_blocked"] = _whatsapp_options(
+            wa_templates, whatsapp_number, fields)
         inv["email_options"] = _email_options(email_templates, email_address, fields)
-        inv["wa_default_url"] = inv["wa_options"][0]["url"] if inv["wa_options"] else ""
         inv["email_default_url"] = inv["email_options"][0]["url"] if inv["email_options"] else ""
 
     setting_key = contact_id or cid
