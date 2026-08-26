@@ -1,0 +1,40 @@
+{% comment %}One comment plus its replies, for the per-debtor mini chat.
+
+Expects `t` ({c, replies, replies_hidden}) and inherits `d` and `can_collect`
+from the statement. Replies older than the newest couple are rendered but
+hidden, so "see more" is instant and needs no round trip.{% endcomment %}
+<div class="dc-msg">
+    <div class="dc-meta"><strong>{{ t.c.author_name|default:"&mdash;" }}</strong> &middot; {{ t.c.created_at|date:"Y-m-d H:i" }}</div>
+    <div class="dc-text">{{ t.c.text|linebreaksbr }}</div>
+
+    {% if t.replies_hidden %}
+    <button type="button" class="dc-more" onclick="revealBlock(this);">
+        &#9662; See {{ t.replies_hidden|length }} earlier repl{{ t.replies_hidden|length|pluralize:"y,ies" }}</button>
+    <div class="dc-collapsed" hidden>
+        {% for r in t.replies_hidden %}
+        <div class="dc-reply">
+            <div class="dc-meta"><strong>{{ r.author_name|default:"&mdash;" }}</strong> &middot; {{ r.created_at|date:"Y-m-d H:i" }}</div>
+            <div class="dc-text">{{ r.text|linebreaksbr }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% for r in t.replies %}
+    <div class="dc-reply">
+        <div class="dc-meta"><strong>{{ r.author_name|default:"&mdash;" }}</strong> &middot; {{ r.created_at|date:"Y-m-d H:i" }}</div>
+        <div class="dc-text">{{ r.text|linebreaksbr }}</div>
+    </div>
+    {% endfor %}
+
+    {% if can_collect %}
+    <button type="button" class="dc-reply-link" onclick="toggleReplyForm(this);">Reply</button>
+    <form class="dc-form dc-reply-form" hidden onsubmit="return submitDebtorComment(event, this);">
+        <input type="hidden" name="contact_id" value="{{ d.cid }}">
+        <input type="hidden" name="contact_name" value="{{ d.name }}">
+        <input type="hidden" name="parent_id" value="{{ t.c.id }}">
+        <textarea name="text" rows="2" placeholder="Reply to {{ t.c.author_name|default:"this note" }}&hellip;" required></textarea>
+        <button type="submit" class="btn btn-primary btn-sm">Reply</button>
+    </form>
+    {% endif %}
+</div>

@@ -193,7 +193,10 @@
     /* Per-debtor mini chat (inside the expanded statement) */
     .dc-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; max-width: 720px; }
     .dc-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin-bottom: 8px; }
-    .dc-list { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; margin-bottom: 10px; }
+    /* Roomy enough that the default few threads and the "see more" above them
+       never scroll — a control you have to scroll up to find is a control nobody
+       presses. The cap still catches a fully expanded history. */
+    .dc-list { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; margin-bottom: 10px; }
     .dc-msg { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 10px; }
     .dc-meta { font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
     .dc-text { font-size: 13px; color: #1f2937; }
@@ -207,6 +210,15 @@
         font-size: 11px; font-weight: 700; color: var(--brand-teal); cursor: pointer; }
     .dc-reply-link:hover { text-decoration: underline; }
     .dc-reply-form { margin-top: 6px; }
+    /* [hidden] only sets display:none in the UA sheet, so .dc-form's display:flex
+       beats it and every reply box would sit open. Say it explicitly. */
+    .dc-form[hidden], .dc-collapsed[hidden] { display: none; }
+    /* "See N earlier ..." — quiet until you want it. */
+    .dc-more { display: block; margin: 0 0 6px; padding: 3px 0; background: none; border: none;
+        text-align: left;                     /* buttons centre their text by default */
+        font: inherit; font-size: 11.5px; font-weight: 700; color: var(--brand-teal); cursor: pointer; }
+    .dc-more:hover { text-decoration: underline; }
+    .dc-collapsed { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
     /* Credit-note tick / badge (Write-offs page rows) */
     .cn-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 2px 9px; cursor: pointer; margin-left: 6px; white-space: nowrap; }
     .cn-toggle input { accent-color: #047857; cursor: pointer; margin: 0; }
@@ -583,6 +595,14 @@ function submitWriteOff(e) {
 // --- Per-debtor mini chat ---
 // Posts the comment, then re-renders this debtor's statement in place so the
 // new message appears without reloading (and without collapsing the row).
+// Reveal a block of older comments or replies that was rendered but collapsed.
+// The button has done its job once clicked, so it goes.
+function revealBlock(btn) {
+    var block = btn.nextElementSibling;
+    if (block) block.hidden = false;
+    btn.remove();
+}
+
 // Show the reply box under one comment. The form posts through the same handler
 // as a new note — it just carries a parent_id, so the server threads it.
 function toggleReplyForm(btn) {
@@ -1076,7 +1096,7 @@ document.addEventListener('click', function (e) {
                         <button type="submit" class="debtor-action-btn reopen">&#8634; Reopen</button>
                     </form>
                     {% elif not write_off_page and not closed_page %}
-                    {% if can_manage and not handover_page %}
+                    {% if can_hand_over and not handover_page %}
                     <button type="button" class="debtor-action-btn handover"
                             onclick="event.stopPropagation(); openHandoverAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
                             title="Immediately move ALL this client's open invoices to the Handover page (no waiting for the aging threshold)">&#9889; Hand over client</button>

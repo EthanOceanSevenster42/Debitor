@@ -2,7 +2,7 @@
 {% comment %}
 Inner HTML of one debtor's expanded detail row. Loaded on demand by the Debtors
 Action / Closed / Write-off / Handover pages so the initial page weight stays
-small. Context: d, write_off_page, handover_page, can_handover_manage,
+small. Context: d, write_off_page, handover_page, can_handover_manage, can_hand_over,
 current_full_path.
 {% endcomment %}
 {% if d.contact_id %}
@@ -96,31 +96,17 @@ current_full_path.
 <div class="dc-box" onclick="event.stopPropagation();">
     <div class="dc-title">&#128172; Debtor comments</div>
     <div class="dc-list">
-        {# Threaded one level: each note carries its replies, indented under it. #}
-        {% for t in debtor_comments %}
-        <div class="dc-msg">
-            <div class="dc-meta"><strong>{{ t.c.author_name|default:"&mdash;" }}</strong> &middot; {{ t.c.created_at|date:"Y-m-d H:i" }}</div>
-            <div class="dc-text">{{ t.c.text|linebreaksbr }}</div>
-            {% for r in t.replies %}
-            <div class="dc-reply">
-                <div class="dc-meta"><strong>{{ r.author_name|default:"&mdash;" }}</strong> &middot; {{ r.created_at|date:"Y-m-d H:i" }}</div>
-                <div class="dc-text">{{ r.text|linebreaksbr }}</div>
-            </div>
-            {% endfor %}
-            {% if can_collect %}
-            <button type="button" class="dc-reply-link" onclick="toggleReplyForm(this);">Reply</button>
-            <form class="dc-form dc-reply-form" hidden onsubmit="return submitDebtorComment(event, this);">
-                <input type="hidden" name="contact_id" value="{{ d.cid }}">
-                <input type="hidden" name="contact_name" value="{{ d.name }}">
-                <input type="hidden" name="parent_id" value="{{ t.c.id }}">
-                <textarea name="text" rows="2" placeholder="Reply to {{ t.c.author_name|default:"this note" }}&hellip;" required></textarea>
-                <button type="submit" class="btn btn-primary btn-sm">Reply</button>
-            </form>
-            {% endif %}
+        {% if debtor_comments_earlier %}
+        <button type="button" class="dc-more" onclick="revealBlock(this);">
+            &#9662; See {{ debtor_comments_earlier|length }} earlier comment{{ debtor_comments_earlier|length|pluralize }}</button>
+        <div class="dc-collapsed" hidden>
+            {% for t in debtor_comments_earlier %}{% include "xero/_debtor_comment_thread.html" %}{% endfor %}
         </div>
-        {% empty %}
+        {% endif %}
+        {% for t in debtor_comments %}{% include "xero/_debtor_comment_thread.html" %}{% endfor %}
+        {% if not debtor_comment_total %}
         <div class="dc-empty muted">No comments on this debtor yet.</div>
-        {% endfor %}
+        {% endif %}
     </div>
     {% if can_collect %}
     <form class="dc-form" onsubmit="return submitDebtorComment(event, this);">
@@ -310,7 +296,7 @@ current_full_path.
                     </form>
                     {% endif %}
                     {% else %}
-                    {% if can_manage %}
+                    {% if can_hand_over %}
                     <button type="button" class="row-menu-item handover" role="menuitem"
                             onclick="event.stopPropagation(); closeAllRowMenus(); openHandoverModal('{{ inv.invoice_id }}', '{{ inv.number|escapejs }}', '{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');">&#9889; Mark for handover</button>
                     {% endif %}
