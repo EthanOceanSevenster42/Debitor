@@ -77,6 +77,12 @@
     .nt-preview strong { color: #475569; }
     .nt-row.open .nt-preview { display: none; }
     .nt-detail { margin-top: 6px; }
+    /* A notice with nothing behind it (an allocation, or a comment since
+       deleted) keeps the same layout but is not a control: no arrow, no
+       pointer, and its text wraps in full rather than clipping to a preview
+       there is no way to open. */
+    .nt-toggle:disabled { cursor: default; opacity: 1; color: inherit; }
+    .nt-toggle.static .nt-preview { white-space: normal; color: #334155; }
     mark { background: #fef08a; color: inherit; padding: 0 1px; border-radius: 2px; }
 
     /* --- Responsive ---------------------------------------------------------
@@ -191,9 +197,10 @@ function toggleNotice(btn) {
             {% comment %}Collapsed by default: the header is the whole click target,
             and opening it reveals the exchange plus the reply box. ({# #} is
             single-line only, hence the comment tag.){% endcomment %}
-            <button type="button" class="nt-toggle" aria-expanded="false" onclick="toggleNotice(this);">
+            <button type="button" class="nt-toggle{% if not row.thread %} static{% endif %}"
+                    {% if row.thread %}aria-expanded="false" onclick="toggleNotice(this);"{% else %}disabled{% endif %}>
                 <span class="nt-line">
-                    <span class="nt-caret">&#9656;</span>
+                    {% if row.thread %}<span class="nt-caret">&#9656;</span>{% endif %}
                     <span class="nt-debtor">{{ n.contact_name|default:n.contact_id }}</span>
                     <span class="nt-kind {{ n.kind }}">{{ n.get_kind_display }}</span>
                     <span class="nt-who"><strong>{{ n.actor_name|default:"&mdash;" }}</strong>{% if n.actor_role %} &middot; {{ n.actor_role }}{% endif %} &middot; {{ n.created_at|date:"H:i" }}</span>
@@ -202,8 +209,8 @@ function toggleNotice(btn) {
                 <span class="nt-preview">{% if last %}<strong>{{ last.author_name }}:</strong> {{ last.text|truncatechars:110 }}{% else %}{{ n.text|truncatechars:110 }}{% endif %}</span>
             </button>
 
+            {% if row.thread %}
             <div class="nt-detail" hidden>
-                {% if row.thread %}
                 <div class="nt-thread">
                     {% for m in row.thread.messages %}
                     <div class="nt-msg{% if m.id == n.comment_id %} focus{% endif %}{% if m.parent_id %} reply{% endif %}">
@@ -224,12 +231,8 @@ function toggleNotice(btn) {
                     <button type="submit" class="nt-reply-btn">Reply</button>
                 </form>
                 {% endif %}
-                {% else %}
-                {% comment %}No thread behind it: an allocation, or a notice raised
-                before they carried the link. Its stored text is all there is.{% endcomment %}
-                <div class="nt-text">{{ n.text }}</div>
-                {% endif %}
             </div>
+            {% endif %}
         </div>
         {% if n.seen_at %}
         <span class="nt-state">Read</span>
