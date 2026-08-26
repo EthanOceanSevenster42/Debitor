@@ -30,6 +30,9 @@ FRIENDLY_LABELS = {
     # Debtors / collections
     'xero_allocate_debtor': 'Changed a debtor allocation',
     'xero_notice_delete': 'Deleted notifications',
+    # Not a route: written by _log_notices_raised when notifications go out, so
+    # the log records who was told even if they later delete the notice.
+    'xero_notice_raised': 'Notifications sent',
     'xero_log_call': 'Logged a call',
     'xero_send_whatsapp': 'Sent a WhatsApp reminder',
     # Retired with the wa.me flow; kept so historical audit rows still read well.
@@ -123,6 +126,35 @@ def humanize_entry(url_name, label, params, user_names):
 
     if url_name == 'xero_debtor_comment_add':
         return _with_quote(format_html('commented on {}', _bold(company)), quote)
+
+    # Notifications. These two are the durable record of who was told what: a
+    # recipient can delete a notice off their own list, so the sentence has to
+    # carry the detail rather than point at a row that may be gone.
+    if url_name == 'xero_notice_raised':
+        told = params.get('to') or []
+        who = ', '.join(told) if len(told) <= 3 else f'{len(told)} people'
+        about = {'reply': 'a reply', 'allocation': 'an allocation'}.get(
+            params.get('kind'), 'a comment')
+        return _with_quote(
+            format_html('notified {} of {} on {}', _bold(who), about,
+                        _bold(params.get('debtor') or 'a debtor')),
+            params.get('text') or '')
+
+    if url_name == 'xero_notice_delete':
+        gone = params.get('deleted') or []
+        if len(gone) == 1:
+            one = gone[0]
+            return _with_quote(
+                format_html('deleted a notification from {} about {}',
+                            _bold(one.get('from') or 'someone'),
+                            _bold(one.get('debtor') or 'a debtor')),
+                one.get('text') or '')
+        debtors = sorted({d.get('debtor') for d in gone if d.get('debtor')})
+        if debtors:
+            listed = ', '.join(debtors[:3]) + ('…' if len(debtors) > 3 else '')
+            return format_html('deleted {} notifications ({})',
+                               _bold(str(len(gone))), listed)
+        return format_html('deleted {} notifications', _bold(str(len(gone))))
 
     if url_name == 'xero_handover_settings':
         mode = params.get('mode') or ''
