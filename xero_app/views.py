@@ -42,8 +42,9 @@ from . import outreach
 from . import reports
 from . import notifications
 from . import wati
+from accounts.audit import _log as _audit_log
 from accounts.decorators import super_admin_required, role_required
-from accounts.models import Role
+from accounts.models import AuditLog, Role
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -1413,6 +1414,30 @@ def xero_credit_note_toggle(request):
     return redirect(request.POST.get("next") or "xero_write_offs")
 
 
+def _log_notices_raised(request, notices):
+    """Record in the audit log that notifications went out.
+
+    A recipient can delete a notice off their own list, so the notice row is not
+    a durable record of who was told — this is. Deleting one is logged too, but
+    only a notice that somebody happens to delete would be captured that way; a
+    notice read and left alone would leave no trace at all.
+
+    One row per triggering event listing everyone told, not one per recipient, so
+    a comment that reaches four Super Admins reads as the single thing it was."""
+    if not notices:
+        return
+    first = notices[0]
+    _audit_log(
+        request.user, AuditLog.ACTION_CHANGE,
+        label="Notified %d %s" % (len(notices), "person" if len(notices) == 1 else "people"),
+        url_name="xero_notice_raised", method="POST", path=request.path,
+        params={"kind": first.kind,
+                "debtor": first.contact_name or first.contact_id,
+                "to": sorted(n.recipient.email for n in notices),
+                "text": first.text},
+    )
+
+
 def _notify_debtor_comment(request, tenant_id, comment, contact_id, contact_name,
                            author_name, parent=None):
     """Raise a DebtorNotice for everyone who needs to know about this comment.
@@ -1449,16 +1474,18 @@ def _notify_debtor_comment(request, tenant_id, comment, contact_id, contact_name
         add(parent.author)
 
     kind = DebtorNotice.KIND_REPLY if parent is not None else DebtorNotice.KIND_COMMENT
+    notices = [
+        DebtorNotice(
+            tenant_id=tenant_id, recipient=user, actor_name=author_name,
+            actor_role=request.user.get_role_display(), contact_id=contact_id,
+            contact_name=contact_name, kind=kind, comment=comment,
+            text=comment.text[:2000],
+        )
+        for user in recipients.values()
+    ]
     try:
-        DebtorNotice.objects.bulk_create([
-            DebtorNotice(
-                tenant_id=tenant_id, recipient=user, actor_name=author_name,
-                actor_role=request.user.get_role_display(), contact_id=contact_id,
-                contact_name=contact_name, kind=kind, comment=comment,
-                text=comment.text[:2000],
-            )
-            for user in recipients.values()
-        ])
+        DebtorNotice.objects.bulk_create(notices)
+        _log_notices_raised(request, notices)
     except DatabaseError:
         # The comment is already saved; losing it because a notice could not be
         # written would be the worse outcome of the two.
@@ -2879,9 +2906,6 @@ def xero_notice_delete(request):
     to the audit log in full before its row goes, and the comment threads the
     notices point at are separate records - deleting a notice never touches the
     chat itself."""
-    from accounts.audit import _log
-    from accounts.models import AuditLog
-
     qs = DebtorNotice.objects.filter(recipient=request.user)
     wants_page = (request.POST.get("redirect") or "") == "1"
     if (request.POST.get("all") or "") != "1":
@@ -2900,7 +2924,7 @@ def xero_notice_delete(request):
                      if n.seen_at else "unread"),
             "comment_id": n.comment_id,
         } for n in rows]
-        _log(request.user, AuditLog.ACTION_CHANGE,
+        _audit_log(request.user, AuditLog.ACTION_CHANGE,
              label="Deleted %d notification%s" % (len(rows), "s" if len(rows) != 1 else ""),
              url_name="xero_notice_delete", method="POST", path=request.path,
              params={"deleted": snapshot})
@@ -2948,7 +2972,7 @@ def xero_allocate_debtor(request):
                 # Being handed a debtor is news to the person receiving it — tell
                 # them, unless they just allocated it to themselves.
                 if admin.id != previous_id and admin.id != request.user.id:
-                    DebtorNotice.objects.create(
+                    notice = DebtorNotice.objects.create(
                         tenant_id=tenant_id, recipient=admin,
                         actor_name=request.user.get_full_name() or request.user.email,
                         actor_role=request.user.get_role_display(),
@@ -2956,6 +2980,7 @@ def xero_allocate_debtor(request):
                         kind=DebtorNotice.KIND_ALLOCATION,
                         text="Allocated this debtor to you for follow-up.",
                     )
+                    _log_notices_raised(request, [notice])
                 if not is_ajax:
                     messages.success(request, f"{contact_name or contact_id} allocated to {allocated_name}.")
         else:
