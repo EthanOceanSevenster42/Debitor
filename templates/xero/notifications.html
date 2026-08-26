@@ -44,6 +44,10 @@
                    padding: 2px 8px; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
                    white-space: nowrap; }
     .nt-mark-btn:hover { background: var(--brand-teal, #0E7C7B); border-color: var(--brand-teal, #0E7C7B); color: #fff; }
+    .nt-del-btn { background: #fff; border: 1px solid #fecaca; color: #b91c1c; border-radius: 6px;
+                  font-size: 10.5px; font-weight: 700; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+    .nt-del-btn:hover { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+    .nt-del { flex: 0 0 auto; margin: 0 0 0 6px; align-self: flex-start; }
     /* The exchange behind a notice: each message says who spoke, replies indent
        under the note they answer, and the one this notice is about is tinted so
        it is findable in a long thread. */
@@ -153,6 +157,13 @@ function toggleNotice(btn) {
                 <button type="submit" class="btn btn-secondary btn-sm">&#10003; Mark all read</button>
             </form>
             {% endif %}
+            <form method="post" action="{% url 'xero_notice_delete' %}" style="margin:0;"
+                  onsubmit="return confirm('Delete ALL your notifications? Each one is kept in full in the audit log, and comment threads on debtors are untouched.');">
+                {% csrf_token %}
+                <input type="hidden" name="all" value="1">
+                <input type="hidden" name="redirect" value="1">
+                <button type="submit" class="nt-del-btn" title="Delete every notification in this list (they stay in the audit log)">&#10005; Delete all</button>
+            </form>
         </div>
     </div>
 
@@ -230,6 +241,13 @@ function toggleNotice(btn) {
             <button type="submit" class="nt-mark-btn" title="Mark this one as read">&#10003; Mark read</button>
         </form>
         {% endif %}
+        <form method="post" action="{% url 'xero_notice_delete' %}" class="nt-del"
+              onsubmit="return confirm('Delete this notification? It stays in the audit log, and the comment thread on the debtor is untouched.');">
+            {% csrf_token %}
+            <input type="hidden" name="ids" value="{{ n.id }}">
+            <input type="hidden" name="redirect" value="1">
+            <button type="submit" class="nt-del-btn" title="Delete this notification (kept in the audit log)">&#10005;</button>
+        </form>
     </div>
     {% endwith %}{% endfor %}
     {% empty %}
