@@ -59,7 +59,7 @@
 
             {% if user.is_super_admin or user.is_administrator or user.is_lawyer %}
             <div class="sb-section">Legal</div>
-            {% if user.is_super_admin %}
+            {% if user.is_super_admin or user.is_administrator %}
             <a href="{% url 'xero_handover' %}" title="Handover"
                class="sb-item{% if request.resolver_match.url_name == 'xero_handover' or request.resolver_match.url_name == 'xero_handover_overrides' %} active{% endif %}"><svg class="sb-ico" aria-hidden="true"><use href="#i-handover"/></svg><span class="sb-label">Handover</span></a>
             {% endif %}

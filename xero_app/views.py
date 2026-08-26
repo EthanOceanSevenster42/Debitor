@@ -617,6 +617,11 @@ def _current_tenant_id(request):
 
 HANDOVER_DAYS = 65
 
+# How much of a debtor's mini chat is drawn before the "see more" controls: the
+# newest few threads, and the newest few replies within each one.
+DC_THREADS_SHOWN = 3
+DC_REPLIES_SHOWN = 2
+
 
 def _handover_threshold_map(tenant_id):
     """contact_id -> the days-past-due threshold at which that debtor's invoices
@@ -1174,6 +1179,7 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         }),
         "handover_excluded_count": HandoverSetting.objects.filter(tenant_id=tenant_id).count(),
         "can_handover_manage": _can_handover_manage(request.user),
+        "can_hand_over": _can_hand_over(request.user),
         "can_manage": _can_manage(request.user),
         "can_write_off": _can_write_off(request.user),
         "can_collect": _can_collect(request.user),
@@ -1543,9 +1549,32 @@ def xero_unwrite_off_invoice(request):
 
 # ---- Handover ----------------------------------------------------------------
 
+def _can_hand_over(user):
+    """Who may PUT something into handover — mark an invoice, or hand over a
+    whole client — from the Debtors Action page.
+
+    Administrators as well as Super Admins: they are the ones chasing the debtor,
+    so they are the ones who know when chasing has stopped working. Deciding what
+    then HAPPENS to a handed-over client stays with a Super Admin: see
+    _can_handover_manage below."""
+    return user.is_super_admin or user.is_administrator
+
+
+def _can_see_handover(user):
+    """Who may open the Handover page. Anyone who can put something there needs
+    to be able to see it land, so this matches _can_hand_over — but seeing it is
+    all an administrator gets; every control on that page is gated separately."""
+    return _can_hand_over(user)
+
+
 def _can_handover_manage(user):
-    """Who may set handover rules / mark / move invoices on the handover flow.
-    Super Admins only (handover feeds the legal pipeline)."""
+    """Who may manage the handover flow once something is in it: move an invoice
+    back out, set a debtor's auto-handover rule, open the overrides list, and
+    send a client on to the lawyers.
+
+    Super Admins only. These reverse or approve somebody else's handover, or
+    change the policy that decides future ones — different decisions from making
+    the handover in the first place, which is why they are a separate gate."""
     return user.is_super_admin
 
 
@@ -1559,7 +1588,7 @@ def xero_handover(request):
         return redirect("xero_login")
     if request.user.is_lawyer:
         return redirect("xero_legal")
-    if not _can_manage(request.user):
+    if not _can_see_handover(request.user):
         return redirect("xero_dashboard")
     ctx = _aging_context(request, tenant_id, closed_only=False, handover_only=True)
     ctx["closed_page"] = False
@@ -1578,7 +1607,7 @@ def xero_handover_mark(request):
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     if not tenant_id:
         return JsonResponse({"error": "Not connected to Xero."}, status=400) if is_ajax else redirect("xero_login")
-    if not _can_handover_manage(request.user):
+    if not _can_hand_over(request.user):
         return JsonResponse({"error": "Not permitted."}, status=403) if is_ajax else redirect(request.POST.get("next") or "xero_aging_report")
 
     invoice_id = (request.POST.get("invoice_id") or "").strip()
@@ -1622,8 +1651,8 @@ def xero_handover_debtor(request):
     tenant_id = _current_tenant_id(request)
     if not tenant_id:
         return redirect("xero_login")
-    if not _can_handover_manage(request.user):
-        messages.error(request, "Only a Super Admin can hand over a client.")
+    if not _can_hand_over(request.user):
+        messages.error(request, "You don't have permission to hand over a client.")
         return redirect(request.POST.get("next") or "xero_aging_report")
     contact_id = (request.POST.get("contact_id") or "").strip()
     contact_name = (request.POST.get("contact_name") or "").strip()
@@ -2678,14 +2707,26 @@ def xero_debtor_statement(request):
     # The per-debtor mini chat — same thread on every page this debtor shows on.
     # Threaded one level: each top-level comment carries the replies to it, in the
     # order they were written (the model's default ordering).
+    #
+    # Only the newest few of each are shown. A debtor chased for months collects a
+    # long history, and rendering all of it pushes the invoice table — the reason
+    # the row was opened — off the screen. The rest sits behind a "see more".
     all_comments = list(DebtorComment.objects.filter(
         tenant_id=tenant_id, contact_id=setting_key))
     replies_by_parent = {}
     for c in all_comments:
         if c.parent_id:
             replies_by_parent.setdefault(c.parent_id, []).append(c)
-    debtor_comments = [{"c": c, "replies": replies_by_parent.get(c.id, [])}
-                       for c in all_comments if not c.parent_id]
+    threads = []
+    for c in all_comments:
+        if c.parent_id:
+            continue
+        replies = replies_by_parent.get(c.id, [])
+        threads.append({"c": c,
+                        "replies": replies[-DC_REPLIES_SHOWN:],
+                        "replies_hidden": replies[:-DC_REPLIES_SHOWN]})
+    debtor_comments = threads[-DC_THREADS_SHOWN:]
+    debtor_comments_earlier = threads[:-DC_THREADS_SHOWN]
     d = {"cid": cid, "contact_id": contact_id, "name": contact_name or cid,
          "index": index, "invoices": invoices,
          "handover_auto": hs.auto_handover if hs else True,
@@ -2702,9 +2743,12 @@ def xero_debtor_statement(request):
     return render(request, "xero/_debtor_statement.html", {
         "d": d,
         "debtor_comments": debtor_comments,
+        "debtor_comments_earlier": debtor_comments_earlier,
+        "debtor_comment_total": len(threads),
         "write_off_page": write_off_page,
         "handover_page": handover_page,
-        "can_handover_manage": _can_manage(request.user),
+        "can_handover_manage": _can_handover_manage(request.user),
+        "can_hand_over": _can_hand_over(request.user),
         "can_manage": _can_manage(request.user),
         "can_write_off": _can_write_off(request.user),
         "can_collect": _can_collect(request.user),
