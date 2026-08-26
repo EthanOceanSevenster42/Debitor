@@ -1,5 +1,6 @@
 import os
 import io
+import logging
 import re
 import secrets
 import time
@@ -17,6 +18,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, JsonResponse
 from django.core.cache import cache
 from django.core.management import call_command
+from django.db import DatabaseError
 from django.db.models import Sum, Count, Min, Max, Q
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -41,8 +43,10 @@ from . import reports
 from . import notifications
 from . import wati
 from accounts.decorators import super_admin_required, role_required
+from accounts.models import Role
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 def _assignable_admins():
@@ -1403,6 +1407,60 @@ def xero_credit_note_toggle(request):
     return redirect(request.POST.get("next") or "xero_write_offs")
 
 
+def _notify_debtor_comment(request, tenant_id, comment, contact_id, contact_name,
+                           author_name, parent=None):
+    """Raise a DebtorNotice for everyone who needs to know about this comment.
+
+    Who hears about it depends on which way the comment travels:
+
+      * a Super Admin writing on somebody else's debtor is a message to them, so
+        the allocated administrator is told;
+      * an administrator writing is reporting upwards, so every active Super
+        Admin is told — otherwise collections notes sit unread;
+      * a reply is aimed at the person being answered, so that author is told
+        even when neither rule above would have reached them.
+
+    The author never notifies themselves, and a recipient caught by more than one
+    rule is only told once. Notices are best-effort: a failure here must not lose
+    the comment that was already saved."""
+    recipients = {}
+
+    def add(user):
+        if user and user.is_active and user.id != request.user.id:
+            recipients.setdefault(user.id, user)
+
+    if request.user.is_super_admin:
+        alloc = (DebtorAllocation.objects
+                 .filter(tenant_id=tenant_id, contact_id=contact_id)
+                 .select_related("administrator").first())
+        if alloc:
+            add(alloc.administrator)
+    else:
+        for admin in User.objects.filter(role=Role.SUPER_ADMIN, is_active=True):
+            add(admin)
+
+    if parent is not None:
+        add(parent.author)
+
+    kind = DebtorNotice.KIND_REPLY if parent is not None else DebtorNotice.KIND_COMMENT
+    try:
+        DebtorNotice.objects.bulk_create([
+            DebtorNotice(
+                tenant_id=tenant_id, recipient=user, actor_name=author_name,
+                actor_role=request.user.get_role_display(), contact_id=contact_id,
+                contact_name=contact_name, kind=kind, comment=comment,
+                text=comment.text[:2000],
+            )
+            for user in recipients.values()
+        ])
+    except DatabaseError:
+        # The comment is already saved; losing it because a notice could not be
+        # written would be the worse outcome of the two.
+        logger.exception("Could not raise comment notices for debtor %s", contact_id)
+        return 0
+    return len(recipients)
+
+
 @login_required
 @require_POST
 def xero_debtor_comment_add(request):
@@ -1426,23 +1484,32 @@ def xero_debtor_comment_add(request):
             return JsonResponse({"error": "Comment text is required."}, status=400)
         messages.error(request, "Comment text is required.")
         return redirect(request.POST.get("next") or "xero_aging_report")
+    # A reply attaches to the comment it answers. Only ever one level deep: a
+    # reply to a reply joins the same top-level thread, so the mini chat cannot
+    # nest itself into an unreadable staircase inside a table cell.
+    parent = None
+    parent_id = (request.POST.get("parent_id") or "").strip()
+    if parent_id.isdigit():
+        parent = DebtorComment.objects.filter(
+            id=int(parent_id), tenant_id=tenant_id, contact_id=contact_id).first()
+        if parent is not None and parent.parent_id:
+            parent = parent.parent
+
     author_name = request.user.get_full_name() or request.user.email
-    DebtorComment.objects.create(
+    comment = DebtorComment.objects.create(
         tenant_id=tenant_id, contact_id=contact_id, contact_name=contact_name,
         author=request.user, author_name=author_name, text=text[:2000],
+        parent=parent,
     )
-    # A Super Admin commenting on somebody else's debtor is a message to them:
-    # raise a popup for whoever the debtor is allocated to.
-    if request.user.is_super_admin:
-        alloc = (DebtorAllocation.objects
-                 .filter(tenant_id=tenant_id, contact_id=contact_id)
-                 .select_related("administrator").first())
-        if alloc and alloc.administrator_id != request.user.id and alloc.administrator.is_active:
-            DebtorNotice.objects.create(
-                tenant_id=tenant_id, recipient=alloc.administrator,
-                actor_name=author_name, actor_role=request.user.get_role_display(),
-                contact_id=contact_id, contact_name=contact_name, text=text[:2000],
-            )
+    _notify_debtor_comment(request, tenant_id, comment, contact_id, contact_name,
+                           author_name, parent=parent)
+    # Answering a notice from the Notifications page deals with it, so clear it
+    # rather than leaving the sender to press "Mark read" straight afterwards.
+    notice_id = (request.POST.get("notice_id") or "").strip()
+    if notice_id.isdigit():
+        (DebtorNotice.objects
+         .filter(id=int(notice_id), recipient=request.user, seen_at__isnull=True)
+         .update(seen_at=timezone.now()))
     if is_ajax:
         return JsonResponse({"ok": True})
     return redirect(request.POST.get("next") or "xero_aging_report")
@@ -2609,8 +2676,16 @@ def xero_debtor_statement(request):
     hs = HandoverSetting.objects.filter(tenant_id=tenant_id, contact_id=setting_key).first()
     legal = LegalMatter.objects.filter(tenant_id=tenant_id, contact_id=setting_key).first()
     # The per-debtor mini chat — same thread on every page this debtor shows on.
-    debtor_comments = list(DebtorComment.objects.filter(
+    # Threaded one level: each top-level comment carries the replies to it, in the
+    # order they were written (the model's default ordering).
+    all_comments = list(DebtorComment.objects.filter(
         tenant_id=tenant_id, contact_id=setting_key))
+    replies_by_parent = {}
+    for c in all_comments:
+        if c.parent_id:
+            replies_by_parent.setdefault(c.parent_id, []).append(c)
+    debtor_comments = [{"c": c, "replies": replies_by_parent.get(c.id, [])}
+                       for c in all_comments if not c.parent_id]
     d = {"cid": cid, "contact_id": contact_id, "name": contact_name or cid,
          "index": index, "invoices": invoices,
          "handover_auto": hs.auto_handover if hs else True,
@@ -2674,9 +2749,12 @@ def xero_notifications(request):
     if q:
         qs = qs.filter(Q(contact_name__icontains=q) | Q(actor_name__icontains=q)
                        | Q(text__icontains=q))
-    rows = list(qs[:300])
+    rows = list(qs.select_related("comment", "comment__parent")[:300])
+    threads = _notice_threads(rows)
 
-    # Consecutive runs of the same day become one headed group.
+    # Consecutive runs of the same day become one headed group. Each row carries
+    # the thread it belongs to, so a notice reads as a conversation and can be
+    # answered without going and finding the debtor first.
     groups = []
     for n in rows:
         d = timezone.localtime(n.created_at).date()
@@ -2684,7 +2762,7 @@ def xero_notifications(request):
                  "Yesterday" if d == yesterday else d.strftime("%d %b %Y"))
         if not groups or groups[-1]["label"] != label:
             groups.append({"label": label, "rows": []})
-        groups[-1]["rows"].append(n)
+        groups[-1]["rows"].append({"n": n, "thread": threads.get(n.id)})
 
     return render(request, "xero/notifications.html", {
         "groups": groups,
@@ -2693,8 +2771,45 @@ def xero_notifications(request):
         "count_today": count_today,
         "count_yesterday": count_yesterday,
         "delta": count_today - count_yesterday,
+        "can_collect": _can_collect(request.user),
         "q": q,
     })
+
+
+def _notice_threads(notices):
+    """{notice_id: {"root": comment, "messages": [comment, ...]}} for the notices
+    that came from a comment.
+
+    A notice points at the one comment that raised it, but what the recipient
+    needs to see is the exchange around it — who said what, in order — so this
+    walks back to the top-level comment and collects the whole thread. Two
+    queries for the whole page rather than one per row: notices commonly share a
+    thread, and a page holds up to 300 of them.
+
+    Allocation notices, and rows raised before notices carried the link, simply
+    have no thread; the page falls back to their stored text."""
+    roots = {}          # notice id -> root comment id
+    for n in notices:
+        if n.comment_id:
+            roots[n.id] = n.comment.parent_id or n.comment_id
+    root_ids = set(roots.values())
+    if not root_ids:
+        return {}
+
+    by_root = {}
+    for c in (DebtorComment.objects
+              .filter(Q(id__in=root_ids) | Q(parent_id__in=root_ids))
+              .select_related("parent")):
+        by_root.setdefault(c.parent_id or c.id, []).append(c)
+    for messages in by_root.values():
+        messages.sort(key=lambda c: c.created_at)
+
+    out = {}
+    for notice_id, root_id in roots.items():
+        messages = by_root.get(root_id) or []
+        if messages:
+            out[notice_id] = {"root": messages[0], "messages": messages}
+    return out
 
 
 @login_required
@@ -2737,12 +2852,28 @@ def xero_allocate_debtor(request):
         if admin_id:
             admin = _assignable_admins().filter(id=admin_id).first()
             if admin:
+                # Who held it before, so re-saving the same allocation does not
+                # notify somebody again about a debtor they already own.
+                previous_id = (DebtorAllocation.objects
+                               .filter(tenant_id=tenant_id, contact_id=contact_id)
+                               .values_list("administrator_id", flat=True).first())
                 DebtorAllocation.objects.update_or_create(
                     tenant_id=tenant_id, contact_id=contact_id,
                     defaults={"contact_name": contact_name, "administrator": admin,
                               "assigned_by": request.user.email},
                 )
                 allocated_name = admin.get_full_name() or admin.email
+                # Being handed a debtor is news to the person receiving it — tell
+                # them, unless they just allocated it to themselves.
+                if admin.id != previous_id and admin.id != request.user.id:
+                    DebtorNotice.objects.create(
+                        tenant_id=tenant_id, recipient=admin,
+                        actor_name=request.user.get_full_name() or request.user.email,
+                        actor_role=request.user.get_role_display(),
+                        contact_id=contact_id, contact_name=contact_name,
+                        kind=DebtorNotice.KIND_ALLOCATION,
+                        text="Allocated this debtor to you for follow-up.",
+                    )
                 if not is_ajax:
                     messages.success(request, f"{contact_name or contact_id} allocated to {allocated_name}.")
         else:

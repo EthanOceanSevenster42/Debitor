@@ -200,6 +200,13 @@
     .dc-empty { font-size: 12.5px; }
     .dc-form { display: flex; gap: 8px; align-items: flex-end; }
     .dc-form textarea { flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical; }
+    /* A reply sits indented under the note it answers, marked by a left rule so
+       the thread reads as one exchange rather than a run of separate notes. */
+    .dc-reply { margin: 6px 0 0 14px; padding-left: 10px; border-left: 2px solid #e2e8f0; }
+    .dc-reply-link { margin-top: 6px; padding: 0; background: none; border: none; font: inherit;
+        font-size: 11px; font-weight: 700; color: var(--brand-teal); cursor: pointer; }
+    .dc-reply-link:hover { text-decoration: underline; }
+    .dc-reply-form { margin-top: 6px; }
     /* Credit-note tick / badge (Write-offs page rows) */
     .cn-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: #065f46; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 2px 9px; cursor: pointer; margin-left: 6px; white-space: nowrap; }
     .cn-toggle input { accent-color: #047857; cursor: pointer; margin: 0; }
@@ -293,6 +300,12 @@
     @media (max-width: 720px) {
         .summary { grid-template-columns: repeat(2, 1fr); }
         .page-title { font-size: 20px; }
+        /* The mini chat is already narrow inside a statement; on a phone the
+           textarea needs the whole row rather than sharing it with the button. */
+        .dc-form { flex-wrap: wrap; }
+        .dc-form textarea { flex: 1 1 100%; }
+        .dc-form .btn { width: 100%; }
+        .dc-reply { margin-left: 8px; }
     }
 </style>{% endblock %}
 
@@ -570,6 +583,16 @@ function submitWriteOff(e) {
 // --- Per-debtor mini chat ---
 // Posts the comment, then re-renders this debtor's statement in place so the
 // new message appears without reloading (and without collapsing the row).
+// Show the reply box under one comment. The form posts through the same handler
+// as a new note — it just carries a parent_id, so the server threads it.
+function toggleReplyForm(btn) {
+    var form = btn.parentElement.querySelector('.dc-reply-form');
+    if (!form) return;
+    form.hidden = !form.hidden;
+    btn.textContent = form.hidden ? 'Reply' : 'Cancel';
+    if (!form.hidden) form.querySelector('textarea').focus();
+}
+
 function submitDebtorComment(e, form) {
     e.preventDefault();
     var btn = form.querySelector('button[type="submit"]');
