@@ -32,6 +32,10 @@
     .nt-who { font-size: 10.5px; color: #94a3b8; font-weight: 600; }
     .nt-who strong { color: #64748b; }
     .nt-text { font-size: 12px; color: #334155; line-height: 1.35; margin-top: 1px; }
+    .nt-kind { padding: 0 7px; border-radius: 9px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .4px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; white-space: nowrap; }
+    .nt-kind.reply { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
+    .nt-kind.allocation { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
     .nt-state { flex: 0 0 auto; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
                 color: #cbd5e1; align-self: flex-start; }
     .nt-row.unread .nt-state { color: var(--brand-teal, #0E7C7B); }
@@ -40,8 +44,89 @@
                    padding: 2px 8px; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
                    white-space: nowrap; }
     .nt-mark-btn:hover { background: var(--brand-teal, #0E7C7B); border-color: var(--brand-teal, #0E7C7B); color: #fff; }
+    /* The exchange behind a notice: each message says who spoke, replies indent
+       under the note they answer, and the one this notice is about is tinted so
+       it is findable in a long thread. */
+    .nt-thread { margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
+    .nt-msg { border-left: 2px solid #e2e8f0; padding: 2px 0 2px 8px; }
+    .nt-msg.reply { margin-left: 14px; }
+    .nt-msg.focus { border-left-color: var(--brand-teal, #0E7C7B); background: #f5fbfb; border-radius: 0 6px 6px 0; }
+    .nt-said { font-size: 10.5px; color: #94a3b8; font-weight: 600; }
+    .nt-said strong { color: #475569; }
+    .nt-reply { display: flex; gap: 6px; align-items: flex-end; margin: 6px 0 2px; }
+    .nt-reply textarea { flex: 1; border: 1px solid #cbd5e1; border-radius: 7px; padding: 5px 9px;
+        font: inherit; font-size: 12px; resize: vertical; min-height: 30px; }
+    .nt-reply textarea:focus { outline: 2px solid #a7f3d0; outline-offset: 0; border-color: var(--brand-teal, #0E7C7B); }
+    .nt-reply-btn { background: var(--brand-teal, #0E7C7B); border: 1px solid var(--brand-teal, #0E7C7B);
+        color: #fff; border-radius: 7px; padding: 5px 12px; font: inherit; font-size: 11.5px;
+        font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .nt-reply-btn:hover { filter: brightness(1.08); }
+    /* The header is the click target for the whole notice. */
+    .nt-toggle { display: block; width: 100%; text-align: left; background: none; border: none;
+        padding: 0; margin: 0; font: inherit; cursor: pointer; }
+    .nt-caret { display: inline-block; font-size: 9px; color: #94a3b8; transition: transform .15s; }
+    .nt-row.open .nt-caret { transform: rotate(90deg); }
+    .nt-count { font-size: 10px; font-weight: 700; color: #64748b; background: #f1f5f9;
+        border: 1px solid #e2e8f0; border-radius: 9px; padding: 0 6px; white-space: nowrap; }
+    .nt-preview { display: block; font-size: 12px; color: #64748b; line-height: 1.35; margin-top: 1px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nt-preview strong { color: #475569; }
+    .nt-row.open .nt-preview { display: none; }
+    .nt-detail { margin-top: 6px; }
     mark { background: #fef08a; color: inherit; padding: 0 1px; border-radius: 2px; }
+
+    /* --- Responsive ---------------------------------------------------------
+       A conversation is read, not scanned, so the thread and its reply box stop
+       widening past a comfortable measure however wide the monitor is. Below the
+       app's 900px phone breakpoint the row stops being a horizontal strip: the
+       Mark-read control drops under the body instead of squeezing it, and the
+       reply box stacks so the textarea keeps a usable width. */
+    .nt-detail { max-width: 760px; }
+    .nt-body { min-width: 0; }                       /* lets the preview ellipsis work */
+    .nt-text, .nt-preview { overflow-wrap: anywhere; }
+
+    @media (max-width: 900px) {
+        .nt-row { flex-wrap: wrap; }
+        /* Basis, not 100%: the body stays beside the dot and only the
+           read-state control wraps to its own line beneath. */
+        .nt-body { flex: 1 1 200px; }
+        .nt-state, .nt-mark { align-self: flex-start; margin-left: 15px; }
+        .nt-mark-btn { padding: 3px 10px; }
+        .nt-search { flex: 1 1 100%; }
+        .nt-search input { min-width: 0; flex: 1; }   /* fills the row it now owns */
+        .nt-tools { margin-left: 0; width: 100%; }
+        .nt-detail { max-width: none; }
+    }
+
+    @media (max-width: 560px) {
+        .nt-row { padding: 6px 8px; gap: 6px; }
+        .nt-line { gap: 5px; }
+        .nt-who { flex-basis: 100%; }                /* who said it drops to its own line */
+        .nt-preview { white-space: normal; }         /* no room to ellipsis — wrap instead */
+        .nt-msg.reply { margin-left: 8px; }
+        .nt-reply { flex-wrap: wrap; }
+        .nt-reply textarea { flex: 1 1 100%; }
+        .nt-reply-btn { width: 100%; }
+        .nt-cmp { gap: 6px; }
+        .nt-stat { flex: 1 1 auto; min-width: 0; }
+    }
 </style>
+<script>
+// Open one notice to read the exchange and answer it; close it again to get the
+// list back. Purely local — nothing is fetched, the thread is already rendered.
+function toggleNotice(btn) {
+    var row = btn.closest('.nt-row');
+    var detail = row.querySelector('.nt-detail');
+    var open = detail.hidden;
+    detail.hidden = !open;
+    row.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+        var box = detail.querySelector('textarea');
+        if (box) box.focus();
+    }
+}
+</script>
 {% endblock %}
 {% block content %}
 <div class="page-card">
@@ -50,7 +135,7 @@
             <h1 class="page-title" style="font-size:20px;">Notifications</h1>
             <p class="page-subtitle" style="margin:0; font-size:12.5px;">
                 {% if unread %}{{ unread }} unread{% else %}Nothing unread{% endif %} &middot;
-                comments your Super Admin left on debtors allocated to you.
+                comments on debtors you work on, and debtors allocated to you. Reply straight from here.
             </p>
         </div>
         <div class="nt-tools">
@@ -88,15 +173,52 @@
 
     {% for g in groups %}
     <div class="nt-day">{{ g.label }}</div>
-    {% for n in g.rows %}
+    {% for row in g.rows %}{% with n=row.n last=row.thread.messages|last %}
     <div class="nt-row{% if not n.seen_at %} unread{% endif %}">
         <span class="nt-dot"></span>
         <div class="nt-body">
-            <div class="nt-line">
-                <span class="nt-debtor">{{ n.contact_name|default:n.contact_id }}</span>
-                <span class="nt-who"><strong>{{ n.actor_name|default:"—" }}</strong>{% if n.actor_role %} &middot; {{ n.actor_role }}{% endif %} &middot; {{ n.created_at|date:"H:i" }}</span>
+            {% comment %}Collapsed by default: the header is the whole click target,
+            and opening it reveals the exchange plus the reply box. ({# #} is
+            single-line only, hence the comment tag.){% endcomment %}
+            <button type="button" class="nt-toggle" aria-expanded="false" onclick="toggleNotice(this);">
+                <span class="nt-line">
+                    <span class="nt-caret">&#9656;</span>
+                    <span class="nt-debtor">{{ n.contact_name|default:n.contact_id }}</span>
+                    <span class="nt-kind {{ n.kind }}">{{ n.get_kind_display }}</span>
+                    <span class="nt-who"><strong>{{ n.actor_name|default:"&mdash;" }}</strong>{% if n.actor_role %} &middot; {{ n.actor_role }}{% endif %} &middot; {{ n.created_at|date:"H:i" }}</span>
+                    {% if row.thread %}<span class="nt-count">{{ row.thread.messages|length }} message{{ row.thread.messages|length|pluralize }}</span>{% endif %}
+                </span>
+                <span class="nt-preview">{% if last %}<strong>{{ last.author_name }}:</strong> {{ last.text|truncatechars:110 }}{% else %}{{ n.text|truncatechars:110 }}{% endif %}</span>
+            </button>
+
+            <div class="nt-detail" hidden>
+                {% if row.thread %}
+                <div class="nt-thread">
+                    {% for m in row.thread.messages %}
+                    <div class="nt-msg{% if m.id == n.comment_id %} focus{% endif %}{% if m.parent_id %} reply{% endif %}">
+                        <span class="nt-said"><strong>{{ m.author_name|default:"&mdash;" }}</strong> said &middot; {{ m.created_at|date:"d M H:i" }}</span>
+                        <div class="nt-text">{{ m.text|linebreaksbr }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if can_collect %}
+                <form method="post" action="{% url 'xero_debtor_comment_add' %}" class="nt-reply">
+                    {% csrf_token %}
+                    <input type="hidden" name="contact_id" value="{{ n.contact_id }}">
+                    <input type="hidden" name="contact_name" value="{{ n.contact_name }}">
+                    <input type="hidden" name="parent_id" value="{{ row.thread.root.id }}">
+                    <input type="hidden" name="notice_id" value="{{ n.id }}">
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <textarea name="text" rows="1" placeholder="Reply to {{ n.actor_name|default:"this thread" }}&hellip;" required></textarea>
+                    <button type="submit" class="nt-reply-btn">Reply</button>
+                </form>
+                {% endif %}
+                {% else %}
+                {% comment %}No thread behind it: an allocation, or a notice raised
+                before they carried the link. Its stored text is all there is.{% endcomment %}
+                <div class="nt-text">{{ n.text }}</div>
+                {% endif %}
             </div>
-            <div class="nt-text">{{ n.text }}</div>
         </div>
         {% if n.seen_at %}
         <span class="nt-state">Read</span>
@@ -109,11 +231,11 @@
         </form>
         {% endif %}
     </div>
-    {% endfor %}
+    {% endwith %}{% endfor %}
     {% empty %}
     <p class="muted">
         {% if q %}Nothing matches &ldquo;{{ q }}&rdquo;.
-        {% else %}No notifications yet. You'll be told here whenever a Super Admin comments on a debtor allocated to you.{% endif %}
+        {% else %}No notifications yet. You'll be told here when somebody comments on a debtor you work on, replies to you, or allocates a debtor to you.{% endif %}
     </p>
     {% endfor %}
 </div>

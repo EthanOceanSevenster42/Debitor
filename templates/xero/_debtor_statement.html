@@ -96,10 +96,27 @@ current_full_path.
 <div class="dc-box" onclick="event.stopPropagation();">
     <div class="dc-title">&#128172; Debtor comments</div>
     <div class="dc-list">
-        {% for c in debtor_comments %}
+        {# Threaded one level: each note carries its replies, indented under it. #}
+        {% for t in debtor_comments %}
         <div class="dc-msg">
-            <div class="dc-meta"><strong>{{ c.author_name|default:"&mdash;" }}</strong> &middot; {{ c.created_at|date:"Y-m-d H:i" }}</div>
-            <div class="dc-text">{{ c.text|linebreaksbr }}</div>
+            <div class="dc-meta"><strong>{{ t.c.author_name|default:"&mdash;" }}</strong> &middot; {{ t.c.created_at|date:"Y-m-d H:i" }}</div>
+            <div class="dc-text">{{ t.c.text|linebreaksbr }}</div>
+            {% for r in t.replies %}
+            <div class="dc-reply">
+                <div class="dc-meta"><strong>{{ r.author_name|default:"&mdash;" }}</strong> &middot; {{ r.created_at|date:"Y-m-d H:i" }}</div>
+                <div class="dc-text">{{ r.text|linebreaksbr }}</div>
+            </div>
+            {% endfor %}
+            {% if can_collect %}
+            <button type="button" class="dc-reply-link" onclick="toggleReplyForm(this);">Reply</button>
+            <form class="dc-form dc-reply-form" hidden onsubmit="return submitDebtorComment(event, this);">
+                <input type="hidden" name="contact_id" value="{{ d.cid }}">
+                <input type="hidden" name="contact_name" value="{{ d.name }}">
+                <input type="hidden" name="parent_id" value="{{ t.c.id }}">
+                <textarea name="text" rows="2" placeholder="Reply to {{ t.c.author_name|default:"this note" }}&hellip;" required></textarea>
+                <button type="submit" class="btn btn-primary btn-sm">Reply</button>
+            </form>
+            {% endif %}
         </div>
         {% empty %}
         <div class="dc-empty muted">No comments on this debtor yet.</div>

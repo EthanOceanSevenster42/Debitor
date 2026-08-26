@@ -91,13 +91,27 @@ class Invoice(models.Model):
 
 
 class DebtorNotice(models.Model):
-    """A popup waiting for one user.
+    """A notice waiting for one user, counted on the sidebar's Notifications item.
 
-    Raised when a Super Admin comments on a debtor that is allocated to somebody
-    else: the allocated administrator is told, wherever they happen to be in the
-    app. Rows are kept after dismissal so the trail shows what was raised and
-    when it was seen.
+    Raised when something on a debtor needs another person to know about it:
+
+      * a Super Admin comments on a debtor allocated to somebody else — the
+        allocated administrator is told;
+      * an administrator comments — the Super Admins are told, so collections
+        chatter does not go unread;
+      * somebody replies to a comment — the author being answered is told;
+      * a debtor is allocated to an administrator — that administrator is told
+        they now own it.
+
+    Rows are kept after dismissal so the trail shows what was raised and when it
+    was seen.
     """
+    KIND_COMMENT = "comment"
+    KIND_REPLY = "reply"
+    KIND_ALLOCATION = "allocation"
+    KIND_CHOICES = [(KIND_COMMENT, "Comment"), (KIND_REPLY, "Reply"),
+                    (KIND_ALLOCATION, "Allocation")]
+
     tenant_id = models.CharField(max_length=64, db_index=True)
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="debtor_notices",
@@ -106,6 +120,17 @@ class DebtorNotice(models.Model):
     actor_role = models.CharField(max_length=64, blank=True)
     contact_id = models.CharField(max_length=255, blank=True)
     contact_name = models.CharField(max_length=255, blank=True)
+    # What raised this, so the list can label an allocation apart from a comment.
+    # Defaults to comment: every row that existed before there were kinds was one.
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default=KIND_COMMENT)
+    # The comment behind this notice, so the Notifications page can show the whole
+    # thread it belongs to and be answered in place instead of only quoting a
+    # copy of the text. Null for an allocation, and for rows raised before the
+    # link existed — those still read fine from `text` alone.
+    comment = models.ForeignKey(
+        "DebtorComment", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="notices",
+    )
     text = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     seen_at = models.DateTimeField(null=True, blank=True)
@@ -324,6 +349,13 @@ class DebtorComment(models.Model):
     )
     author_name = models.CharField(max_length=255, blank=True)
     text = models.TextField()
+    # A reply hangs off the comment it answers so a question and its answer read
+    # together instead of as two loose notes further apart in the thread. One
+    # level deep only — replying to a reply attaches to the same top-level
+    # comment, which keeps the mini chat readable in a table cell.
+    parent = models.ForeignKey(
+        "self", on_delete=models.CASCADE, null=True, blank=True, related_name="replies",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
