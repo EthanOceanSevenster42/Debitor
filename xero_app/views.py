@@ -2873,6 +2873,44 @@ def xero_notice_seen(request):
 
 @login_required
 @require_POST
+def xero_notice_delete(request):
+    """Delete notifications from the signed-in user's list. A user can only ever
+    delete their own, and nothing is lost to the record: every notice is written
+    to the audit log in full before its row goes, and the comment threads the
+    notices point at are separate records - deleting a notice never touches the
+    chat itself."""
+    from accounts.audit import _log
+    from accounts.models import AuditLog
+
+    qs = DebtorNotice.objects.filter(recipient=request.user)
+    wants_page = (request.POST.get("redirect") or "") == "1"
+    if (request.POST.get("all") or "") != "1":
+        ids = [i for i in (request.POST.get("ids") or "").split(",") if i.strip().isdigit()]
+        qs = qs.filter(id__in=ids) if ids else qs.none()
+
+    rows = list(qs)
+    if rows:
+        snapshot = [{
+            "id": n.id, "kind": n.kind,
+            "from": n.actor_name, "role": n.actor_role,
+            "debtor": n.contact_name or n.contact_id,
+            "text": n.text,
+            "raised": timezone.localtime(n.created_at).strftime("%Y-%m-%d %H:%M"),
+            "read": (timezone.localtime(n.seen_at).strftime("%Y-%m-%d %H:%M")
+                     if n.seen_at else "unread"),
+            "comment_id": n.comment_id,
+        } for n in rows]
+        _log(request.user, AuditLog.ACTION_CHANGE,
+             label="Deleted %d notification%s" % (len(rows), "s" if len(rows) != 1 else ""),
+             url_name="xero_notice_delete", method="POST", path=request.path,
+             params={"deleted": snapshot})
+        qs.delete()
+    return (redirect("xero_notifications") if wants_page
+            else JsonResponse({"ok": True, "deleted": len(rows)}))
+
+
+@login_required
+@require_POST
 def xero_allocate_debtor(request):
     """Allocate (or unallocate) a debtor to an administrator for follow-up."""
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"

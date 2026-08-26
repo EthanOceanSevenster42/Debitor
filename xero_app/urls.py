@@ -43,6 +43,7 @@ urlpatterns = [
     path("notifications/", views.xero_notifications, name="xero_notifications"),
     path("notices/", views.xero_notices, name="xero_notices"),
     path("notices/seen/", views.xero_notice_seen, name="xero_notice_seen"),
+    path("notices/delete/", views.xero_notice_delete, name="xero_notice_delete"),
     path("debtor/log-call/", views.xero_log_call, name="xero_log_call"),
     path("invoice/<str:invoice_id>/email-sent/", views.xero_log_email, name="xero_log_email"),
     path("invoice/<str:invoice_id>/unlog-contact/", views.xero_unlog_contact, name="xero_unlog_contact"),

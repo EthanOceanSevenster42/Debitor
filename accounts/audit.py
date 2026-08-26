@@ -29,6 +29,7 @@ _VALUE_LIMIT = 300
 FRIENDLY_LABELS = {
     # Debtors / collections
     'xero_allocate_debtor': 'Changed a debtor allocation',
+    'xero_notice_delete': 'Deleted notifications',
     'xero_log_call': 'Logged a call',
     'xero_send_whatsapp': 'Sent a WhatsApp reminder',
     # Retired with the wa.me flow; kept so historical audit rows still read well.
@@ -188,7 +189,9 @@ class AuditLogMiddleware:
     GET/HEAD/OPTIONS). Sign-in/out are recorded by the auth signals below,
     so those two URLs are skipped here."""
 
-    SKIP_URL_NAMES = {'login', 'logout'}
+    # xero_notice_delete writes its own audit entry carrying the full text of
+    # every deleted notification; the routine ids-only row here would duplicate it.
+    SKIP_URL_NAMES = {'login', 'logout', 'xero_notice_delete'}
 
     def __init__(self, get_response):
         self.get_response = get_response
