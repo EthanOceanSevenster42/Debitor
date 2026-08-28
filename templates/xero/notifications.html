@@ -195,12 +195,17 @@ function toggleNotice(btn) {
         <span class="nt-dot"></span>
         <div class="nt-body">
             {% comment %}Collapsed by default: the header is the whole click target,
-            and opening it reveals the exchange plus the reply box. ({# #} is
-            single-line only, hence the comment tag.){% endcomment %}
-            <button type="button" class="nt-toggle{% if not row.thread %} static{% endif %}"
-                    {% if row.thread %}aria-expanded="false" onclick="toggleNotice(this);"{% else %}disabled{% endif %}>
+            and opening it reveals the exchange plus the box to write in.
+
+            A notice opens if there is a thread to read, or if the reader can
+            write on this debtor at all — being handed a debtor is worth
+            answering even though an allocation has no conversation behind it,
+            so that box starts one. ({# #} is single-line only, hence the
+            comment tag.){% endcomment %}
+            <button type="button" class="nt-toggle{% if not row.open %} static{% endif %}"
+                    {% if row.open %}aria-expanded="false" onclick="toggleNotice(this);"{% else %}disabled{% endif %}>
                 <span class="nt-line">
-                    {% if row.thread %}<span class="nt-caret">&#9656;</span>{% endif %}
+                    {% if row.open %}<span class="nt-caret">&#9656;</span>{% endif %}
                     <span class="nt-debtor">{{ n.contact_name|default:n.contact_id }}</span>
                     <span class="nt-kind {{ n.kind }}">{{ n.get_kind_display }}</span>
                     <span class="nt-who"><strong>{{ n.actor_name|default:"&mdash;" }}</strong>{% if n.actor_role %} &middot; {{ n.actor_role }}{% endif %} &middot; {{ n.created_at|date:"H:i" }}</span>
@@ -209,8 +214,9 @@ function toggleNotice(btn) {
                 <span class="nt-preview">{% if last %}<strong>{{ last.author_name }}:</strong> {{ last.text|truncatechars:110 }}{% else %}{{ n.text|truncatechars:110 }}{% endif %}</span>
             </button>
 
-            {% if row.thread %}
+            {% if row.open %}
             <div class="nt-detail" hidden>
+                {% if row.thread %}
                 <div class="nt-thread">
                     {% for m in row.thread.messages %}
                     <div class="nt-msg{% if m.id == n.comment_id %} focus{% endif %}{% if m.parent_id %} reply{% endif %}">
@@ -219,16 +225,23 @@ function toggleNotice(btn) {
                     </div>
                     {% endfor %}
                 </div>
+                {% else %}
+                <div class="nt-text">{{ n.text }}</div>
+                {% endif %}
                 {% if can_collect %}
+                {% comment %}With a thread the box answers into it; without one it
+                starts a note on the debtor, which reaches the sender the same
+                way any comment does.{% endcomment %}
                 <form method="post" action="{% url 'xero_debtor_comment_add' %}" class="nt-reply">
                     {% csrf_token %}
                     <input type="hidden" name="contact_id" value="{{ n.contact_id }}">
                     <input type="hidden" name="contact_name" value="{{ n.contact_name }}">
-                    <input type="hidden" name="parent_id" value="{{ row.thread.root.id }}">
+                    {% if row.thread %}<input type="hidden" name="parent_id" value="{{ row.thread.root.id }}">{% endif %}
                     <input type="hidden" name="notice_id" value="{{ n.id }}">
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    <textarea name="text" rows="1" placeholder="Reply to {{ n.actor_name|default:"this thread" }}&hellip;" required></textarea>
-                    <button type="submit" class="nt-reply-btn">Reply</button>
+                    <textarea name="text" rows="1" required
+                              placeholder="{% if row.thread %}Reply to {{ n.actor_name|default:"this thread" }}{% else %}Write a note about {{ n.contact_name|default:"this debtor" }}{% endif %}&hellip;"></textarea>
+                    <button type="submit" class="nt-reply-btn">{% if row.thread %}Reply{% else %}Post{% endif %}</button>
                 </form>
                 {% endif %}
             </div>

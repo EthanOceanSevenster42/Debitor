@@ -2822,6 +2822,7 @@ def xero_notifications(request):
                        | Q(text__icontains=q))
     rows = list(qs.select_related("comment", "comment__parent")[:300])
     threads = _notice_threads(rows)
+    can_collect = _can_collect(request.user)
 
     # Consecutive runs of the same day become one headed group. Each row carries
     # the thread it belongs to, so a notice reads as a conversation and can be
@@ -2833,7 +2834,14 @@ def xero_notifications(request):
                  "Yesterday" if d == yesterday else d.strftime("%d %b %Y"))
         if not groups or groups[-1]["label"] != label:
             groups.append({"label": label, "rows": []})
-        groups[-1]["rows"].append({"n": n, "thread": threads.get(n.id)})
+        thread = threads.get(n.id)
+        # Openable when there is an exchange to read, or when this reader can
+        # write on the debtor at all: an allocation has no conversation behind
+        # it, but being handed a debtor is still worth answering.
+        groups[-1]["rows"].append({
+            "n": n, "thread": thread,
+            "open": bool(thread or (can_collect and n.contact_id)),
+        })
 
     return render(request, "xero/notifications.html", {
         "groups": groups,
@@ -2842,7 +2850,7 @@ def xero_notifications(request):
         "count_today": count_today,
         "count_yesterday": count_yesterday,
         "delta": count_today - count_yesterday,
-        "can_collect": _can_collect(request.user),
+        "can_collect": can_collect,
         "q": q,
     })
 
