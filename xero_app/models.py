@@ -166,6 +166,36 @@ class DebtorAllocation(models.Model):
         return f"{self.contact_name or self.contact_id} -> {self.administrator}"
 
 
+class HandoverReturn(models.Model):
+    """One invoice deliberately taken back OUT of handover.
+
+    Needed because handover is partly computed: an invoice lands on the Handover
+    page either from a HandoverInvoice row or simply by ageing past its debtor's
+    threshold. Deleting the row cannot bring an aged invoice back — it re-lists
+    itself on the next page load — and the only lever that used to exist was the
+    debtor's auto-handover rule, which is client-wide. Moving one invoice back
+    therefore dragged every other aged invoice for that client back with it.
+
+    A row here says "a person chose to take this specific invoice back", which
+    beats both the age rule and the client-level filtering. Handing the invoice
+    (or the client) over again clears it.
+    """
+    tenant_id = models.CharField(max_length=64, db_index=True)
+    invoice_id = models.CharField(max_length=64)
+    invoice_number = models.CharField(max_length=64, blank=True, default="")
+    contact_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    contact_name = models.CharField(max_length=255, blank=True, default="")
+    note = models.CharField(max_length=255, blank=True, default="")
+    returned_by = models.CharField(max_length=255, blank=True, default="")
+    returned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("tenant_id", "invoice_id")]
+
+    def __str__(self):
+        return f"{self.invoice_number or self.invoice_id} back from handover"
+
+
 class CallLog(models.Model):
     """Records a contact attempt against a debtor about a specific invoice.
 

@@ -190,6 +190,8 @@
     .debtor-action-btn.write-off:hover { background: #92400e; border-color: #92400e; color: #fff; }
     .debtor-action-btn.handover { background: #fff; color: #3730a3; border-color: #c7d2fe; }
     .debtor-action-btn.handover:hover { background: #3730a3; border-color: #3730a3; color: #fff; }
+    .debtor-action-btn.moveback { background: #fff; color: #047857; border-color: #a7f3d0; }
+    .debtor-action-btn.moveback:hover { background: #047857; border-color: #047857; color: #fff; }
     /* Per-debtor mini chat (inside the expanded statement) */
     .dc-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; max-width: 720px; }
     .dc-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin-bottom: 8px; }
@@ -1096,7 +1098,22 @@ document.addEventListener('click', function (e) {
                         <button type="submit" class="debtor-action-btn reopen">&#8634; Reopen</button>
                     </form>
                     {% elif not write_off_page and not closed_page %}
-                    {% if can_hand_over and not handover_page %}
+                    {% if handover_page %}
+                        {% if can_handover_manage %}
+                        {% comment %}Undo the whole handover. Reversing is a
+                        management call, so it stays with a Super Admin even
+                        where an administrator may make the handover. ({# #} is
+                        single-line only, hence the comment tag.){% endcomment %}
+                        <form method="post" action="{% url 'xero_handover_undo_debtor' %}" class="debtor-action" onclick="event.stopPropagation();"
+                              onsubmit="return confirm('Move {{ d.name|escapejs }} and all its handover invoices back to the Debtors Action page? This client will also be set to never auto-hand over, so nothing bounces straight back.');">
+                            {% csrf_token %}
+                            <input type="hidden" name="contact_id" value="{{ d.cid }}">
+                            <input type="hidden" name="contact_name" value="{{ d.name }}">
+                            <input type="hidden" name="next" value="{{ current_full_path }}">
+                            <button type="submit" class="debtor-action-btn moveback">&#8634; Move client back</button>
+                        </form>
+                        {% endif %}
+                    {% elif can_hand_over %}
                     <button type="button" class="debtor-action-btn handover"
                             onclick="event.stopPropagation(); openHandoverAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
                             title="Immediately move ALL this client's open invoices to the Handover page (no waiting for the aging threshold)">&#9889; Hand over client</button>

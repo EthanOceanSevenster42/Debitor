@@ -32,6 +32,7 @@ from .models import (XeroConnection, OpenInvoiceSnapshot, SyncRun, SyncSchedule,
                      EmailTemplate, MessageTemplate, SystemSetting, HandoverSetting,
                      LegalMatter, LegalStep, LegalStepComment, LegalStepCommentAttachment,
                      RecoveredInvoice, LawyerReportConfig, ReportRecipient, DebtorNotice,
+                     HandoverReturn,
                      DebtorComment,
                      DEFAULT_WA_TEMPLATE, DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY)
 from . import legal_workflow
@@ -870,6 +871,10 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
     written_off_ids = set(
         WriteOffInvoice.objects.filter(tenant_id=tenant_id).values_list("invoice_id", flat=True)
     )
+    # Invoices a person has deliberately taken back out of handover. Beats both
+    # the age rule and the client-level filter below.
+    returned_ids = set(HandoverReturn.objects.filter(tenant_id=tenant_id)
+                       .values_list("invoice_id", flat=True))
     handover_rows = {
         h.invoice_id: h for h in HandoverInvoice.objects.filter(tenant_id=tenant_id)
     }
@@ -938,13 +943,36 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
     # their matters are worked from the Lawyers page until closed / brought back.
     # (Pending ones stay listed so admins can see they await approval.)
     active_legal_cids = set()
-    if handover_only:
+    if handover_only or not (write_off_only or closed_only):
         for m in LegalMatter.objects.filter(tenant_id=tenant_id,
                                             status=LegalMatter.ACTIVE):
             if m.contact_id:
                 active_legal_cids.add(m.contact_id)
             if m.contact_name:
                 active_legal_cids.add(m.contact_name)
+
+    # A client shown on the Handover page belongs there, not in two places at
+    # once. Dropping only its handed-over invoices used to leave the client on the
+    # Debtors Action page with whatever was left, so the same name appeared on
+    # both pages and it was not obvious which invoices sat where.
+    #
+    # The test is whether the client would actually SHOW on the Handover page, so
+    # it repeats that page's own exclusions. A client with an active legal matter
+    # is worked from the Lawyers page and never reaches Handover — removing it
+    # here as well would strand any invoice too fresh to be part of the matter,
+    # with no page left to chase it from.
+    handed_over_cids = set()
+    if not (handover_only or write_off_only or closed_only):
+        for s in snapshots:
+            cid_s = s["contact_id"] or s["contact_name"] or "Unknown"
+            if (s["invoice_id"] in written_off_ids
+                    or cid_s in closed_ids or cid_s in active_legal_cids):
+                continue
+            if s["invoice_id"] in returned_ids:
+                continue
+            if handover_rows.get(s["invoice_id"]) or _is_auto_handover(
+                    s["contact_id"], s["days_past_due"], handover_threshold_map):
+                handed_over_cids.add(cid_s)
 
     debtors = {}
     bucket_totals = defaultdict(lambda: Decimal(0))
@@ -962,7 +990,8 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         h_row = handover_rows.get(s["invoice_id"])
         is_auto_handover = _is_auto_handover(
             s["contact_id"], s["days_past_due"], handover_threshold_map)
-        is_on_handover = bool(h_row) or is_auto_handover
+        was_returned = s["invoice_id"] in returned_ids
+        is_on_handover = (bool(h_row) or is_auto_handover) and not was_returned
 
         # Page scope filter.
         if write_off_only:
@@ -981,8 +1010,10 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
             if is_written_off or cid not in closed_ids:
                 continue
         else:
-            # Open debtors page: drop written-off, handover and closed.
-            if is_written_off or is_on_handover or cid in closed_ids:
+            # Open debtors page: drop written-off, closed and handed-over
+            # invoices, and drop the whole client once it shows on Handover.
+            if (is_written_off or is_on_handover or cid in closed_ids
+                    or (cid in handed_over_cids and not was_returned)):
                 continue
 
         # Allocation-based visibility for non-super-admins.
@@ -1648,6 +1679,8 @@ def xero_handover_mark(request):
         messages.error(request, "A reason is required to mark an invoice for handover.")
         return redirect(request.POST.get("next") or "xero_aging_report")
 
+    # Handing it over again overrides an earlier decision to take it back.
+    HandoverReturn.objects.filter(tenant_id=tenant_id, invoice_id=invoice_id).delete()
     HandoverInvoice.objects.update_or_create(
         tenant_id=tenant_id, invoice_id=invoice_id,
         defaults={"invoice_number": invoice_number, "contact_id": contact_id,
@@ -1697,6 +1730,9 @@ def xero_handover_debtor(request):
                       .values_list("invoice_id", flat=True))
     already = set(HandoverInvoice.objects.filter(tenant_id=tenant_id)
                   .values_list("invoice_id", flat=True))
+    # Handing the whole client over overrides any invoice taken back earlier.
+    HandoverReturn.objects.filter(
+        tenant_id=tenant_id, invoice_id__in=[s.invoice_id for s in snaps]).delete()
     now_ts = timezone.now()
     count = 0
     for s in snaps:
@@ -1757,16 +1793,19 @@ def xero_handover_unmark(request):
         snap = (OpenInvoiceSnapshot.objects
                 .filter(tenant_id=tenant_id, invoice_id=invoice_id)
                 .values("days_past_due", "contact_id", "contact_name").first())
-        threshold_map = _handover_threshold_map(tenant_id)
-        if snap and snap["contact_id"] and _is_auto_handover(
-                snap["contact_id"], snap["days_past_due"], threshold_map):
-            HandoverSetting.objects.update_or_create(
-                tenant_id=tenant_id, contact_id=snap["contact_id"],
-                defaults={"contact_name": snap["contact_name"] or "",
-                          "auto_handover": False,
-                          "note": note or "Moved back from handover",
-                          "set_by": request.user.email},
-            )
+        # Record the return against THIS invoice. Clearing the row alone would
+        # not hold an aged invoice back - it re-lists on the next page load - and
+        # the old fix, switching the debtor's auto-handover rule off, is
+        # client-wide: moving one invoice back dragged every other aged invoice
+        # for that client back with it.
+        HandoverReturn.objects.update_or_create(
+            tenant_id=tenant_id, invoice_id=invoice_id,
+            defaults={"invoice_number": invoice_number,
+                      "contact_id": (snap or {}).get("contact_id") or "",
+                      "contact_name": (snap or {}).get("contact_name") or "",
+                      "note": note or "Moved back from handover",
+                      "returned_by": request.user.email},
+        )
         text = "Moved back from handover" + (f" — {note}" if note else "")
         InvoiceComment.objects.create(
             tenant_id=tenant_id, invoice_id=invoice_id, author=request.user,
@@ -1774,6 +1813,95 @@ def xero_handover_unmark(request):
             comment_at=timezone.now(), text=text,
         )
         messages.success(request, f"Invoice {invoice_number or invoice_id} moved back to Debtors Action.")
+    return redirect(request.POST.get("next") or "xero_handover")
+
+
+@login_required
+@require_POST
+def xero_handover_undo_debtor(request):
+    """Bring a WHOLE client back from Handover to the Debtors Action page.
+
+    The mirror of xero_handover_debtor. Clearing the handover rows alone is not
+    enough: every invoice still past the debtor's threshold would auto-list again
+    on the next page load, so the debtor is also set to never auto-hand over -
+    the same guard the per-invoice move-back applies, for the same reason.
+
+    Reversing somebody's handover is a management call, so it stays with a Super
+    Admin even though an administrator may make the handover in the first place."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    if not _can_handover_manage(request.user):
+        messages.error(request, "Only a Super Admin can bring a client back from handover.")
+        return redirect("xero_handover")
+
+    contact_id = (request.POST.get("contact_id") or "").strip()
+    contact_name = (request.POST.get("contact_name") or "").strip()
+    note = (request.POST.get("note") or "").strip()
+    if not contact_id:
+        messages.error(request, "No client given.")
+        return redirect("xero_handover")
+
+    # cid may be a contact_id or (for id-less contacts) the contact name - the
+    # same key the listing pages group on.
+    fields = ("invoice_id", "invoice_number", "contact_name", "contact_id", "days_past_due")
+    snaps = list(OpenInvoiceSnapshot.objects
+                 .filter(tenant_id=tenant_id, contact_id=contact_id).values(*fields))
+    if not snaps:
+        snaps = list(OpenInvoiceSnapshot.objects
+                     .filter(tenant_id=tenant_id, contact_name=contact_id).values(*fields))
+    invoice_ids = [s["invoice_id"] for s in snaps]
+
+    # Note every invoice that was actually SHOWING on Handover, not just the ones
+    # with a row. An invoice can be there purely by ageing past the threshold, and
+    # it comes back the same way the marked ones do - leaving it out would put a
+    # gap in that invoice's lifecycle.
+    rows = set(HandoverInvoice.objects
+               .filter(tenant_id=tenant_id, invoice_id__in=invoice_ids)
+               .values_list("invoice_id", flat=True))
+    threshold_map = _handover_threshold_map(tenant_id)
+    was_on_handover = {
+        s["invoice_id"] for s in snaps
+        if s["invoice_id"] in rows or _is_auto_handover(
+            s["contact_id"], s["days_past_due"], threshold_map)
+    }
+    HandoverInvoice.objects.filter(tenant_id=tenant_id, invoice_id__in=invoice_ids).delete()
+
+    HandoverSetting.objects.update_or_create(
+        tenant_id=tenant_id, contact_id=contact_id,
+        defaults={"contact_name": contact_name, "auto_handover": False,
+                  "note": (note or "Whole client moved back from handover")[:255],
+                  "set_by": request.user.email},
+    )
+
+    # Same per-invoice records the single move-back writes, so an aged invoice
+    # stays back instead of re-listing itself.
+    by_id = {s["invoice_id"]: s for s in snaps}
+    HandoverReturn.objects.filter(tenant_id=tenant_id,
+                                  invoice_id__in=was_on_handover).delete()
+    HandoverReturn.objects.bulk_create([
+        HandoverReturn(tenant_id=tenant_id, invoice_id=iid,
+                       invoice_number=by_id[iid]["invoice_number"] or "",
+                       contact_id=by_id[iid]["contact_id"] or "",
+                       contact_name=by_id[iid]["contact_name"] or "",
+                       note=(note or "Whole client moved back from handover")[:255],
+                       returned_by=request.user.email)
+        for iid in was_on_handover
+    ])
+
+    now_ts = timezone.now()
+    who = request.user.get_full_name() or request.user.email
+    text = "Moved back from handover (whole client)" + (f" - {note}" if note else "")
+    InvoiceComment.objects.bulk_create([
+        InvoiceComment(tenant_id=tenant_id, invoice_id=iid, author=request.user,
+                       author_name=who, comment_at=now_ts, text=text)
+        for iid in was_on_handover
+    ])
+    messages.success(
+        request,
+        f"{contact_name or contact_id} moved back to Debtors Action "
+        f"({len(was_on_handover)} invoice{'s' if len(was_on_handover) != 1 else ''}). "
+        "This client will no longer auto-hand over.")
     return redirect(request.POST.get("next") or "xero_handover")
 
 
@@ -2558,6 +2686,8 @@ def xero_debtor_statement(request):
         .values_list("invoice_id", "credit_note_issued")) if write_off_page else {}
     handover_rows = {h.invoice_id: h
                      for h in HandoverInvoice.objects.filter(tenant_id=tenant_id)}
+    returned_ids = set(HandoverReturn.objects.filter(tenant_id=tenant_id)
+                       .values_list("invoice_id", flat=True))
     handover_threshold_map = _handover_threshold_map(tenant_id)
     cadence_shift_map = _cadence_shift_map(tenant_id)
     channel_due_map = _channel_due_map(tenant_id)
@@ -2588,7 +2718,8 @@ def xero_debtor_statement(request):
         h_row = handover_rows.get(s["invoice_id"])
         is_auto_handover = _is_auto_handover(
             s["contact_id"], s["days_past_due"], handover_threshold_map)
-        is_on_handover = bool(h_row) or is_auto_handover
+        is_on_handover = ((bool(h_row) or is_auto_handover)
+                          and s["invoice_id"] not in returned_ids)
 
         if write_off_page:
             if not is_written_off:

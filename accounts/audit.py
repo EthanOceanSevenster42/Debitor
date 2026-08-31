@@ -52,6 +52,7 @@ FRIENDLY_LABELS = {
     # Handover / legal
     'xero_handover_mark': 'Marked an invoice for handover',
     'xero_handover_unmark': 'Moved an invoice back from handover',
+    'xero_handover_undo_debtor': 'Moved a whole client back from handover',
     'xero_handover_debtor': 'Handed over a whole client',
     'xero_handover_settings': 'Changed a handover rule',
     'xero_legal_send': 'Sent a company to the lawyers',
