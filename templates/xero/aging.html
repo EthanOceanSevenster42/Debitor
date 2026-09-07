@@ -212,6 +212,10 @@
         font-size: 11px; font-weight: 700; color: var(--brand-teal); cursor: pointer; }
     .dc-reply-link:hover { text-decoration: underline; }
     .dc-reply-form { margin-top: 6px; }
+    .dc-gone { font-size: 12px; color: #94a3b8; font-style: italic; }
+    .dc-remove { margin: 4px 0 0 8px; padding: 0; background: none; border: none; font: inherit;
+        font-size: 11px; font-weight: 700; color: #b91c1c; cursor: pointer; }
+    .dc-remove:hover { text-decoration: underline; }
     /* [hidden] only sets display:none in the UA sheet, so .dc-form's display:flex
        beats it and every reply box would sit open. Say it explicitly. */
     .dc-form[hidden], .dc-collapsed[hidden] { display: none; }
@@ -597,6 +601,26 @@ function submitWriteOff(e) {
 // --- Per-debtor mini chat ---
 // Posts the comment, then re-renders this debtor's statement in place so the
 // new message appears without reloading (and without collapsing the row).
+// Remove one comment from the debtor chat. The wording goes to the audit log
+// and the thread keeps a "removed by" line, so a reply below it still reads.
+function removeDebtorComment(btn, id) {
+    if (!confirm('Remove this comment? The thread will show that it was removed, and the original text stays in the audit log.')) return;
+    btn.disabled = true;
+    var fd = new FormData();
+    fd.append('csrfmiddlewaretoken', window.CSRF_TOKEN);
+    fd.append('id', id);
+    fetch('/xero/debtor/comment/delete/', {
+        method: 'POST', body: fd, credentials: 'same-origin',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+    }).then(function (r) { return r.json().catch(function () { return {}; })
+             .then(function (d) { return {ok: r.ok, data: d}; }); })
+      .then(function (res) {
+          if (!res.ok || !res.data.ok) throw new Error(res.data.error || 'Could not remove the comment.');
+          refreshDebtorStatement(btn);
+      })
+      .catch(function (err) { btn.disabled = false; alert(err.message); });
+}
+
 // Reveal a block of older comments or replies that was rendered but collapsed.
 // The button has done its job once clicked, so it goes.
 function revealBlock(btn) {

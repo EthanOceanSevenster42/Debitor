@@ -93,6 +93,21 @@ def approved_template_names():
     return [t["name"] for t in list_templates() if t["status"] == "approved"]
 
 
+def template_status(template_name):
+    """'approved' / 'pending' / 'rejected' for a template, or None when we cannot
+    tell — no name given, WATI unreachable, or the template not on the account.
+
+    None deliberately means "unknown", not "bad": callers must not refuse a send
+    because a status lookup failed, or a WATI hiccup would block every reminder.
+    """
+    if not template_name:
+        return None
+    for t in list_templates():
+        if t["name"] == template_name:
+            return t["status"]
+    return None
+
+
 # Template definitions change only when someone edits them in the WATI console,
 # so a short cache keeps a button click from paying for an extra round trip.
 _TEMPLATE_CACHE = {"at": 0.0, "by_name": {}}

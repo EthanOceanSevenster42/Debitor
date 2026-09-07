@@ -386,11 +386,21 @@ class DebtorComment(models.Model):
     parent = models.ForeignKey(
         "self", on_delete=models.CASCADE, null=True, blank=True, related_name="replies",
     )
+    # Removed rather than deleted. The chat is part of the collections record, so
+    # a comment that goes is still accounted for: the row stays, the thread shows
+    # that something was removed and by whom, and the original wording is written
+    # to the audit log. A reply that answered it therefore keeps its context.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by_name = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["created_at"]
         indexes = [models.Index(fields=["tenant_id", "contact_id"])]
+
+    @property
+    def is_deleted(self):
+        return self.deleted_at is not None
 
     def __str__(self):
         return f"{self.contact_name or self.contact_id}: {self.text[:40]}"
@@ -547,12 +557,38 @@ class MessageTemplate(models.Model):
     # per-invoice WhatsApp button does not offer it at all.
     wati_template_name = models.CharField(max_length=200, blank=True, default="")
     is_default = models.BooleanField(default=False)
+    # A seasonal template takes over automatically while today falls inside its
+    # window, so nobody has to remember to switch the default on 7 December and
+    # back again in January. Both dates set = a window; either blank = no window,
+    # and the template only ever gets used when picked by hand or made default.
+    # Dates carry a year, so a moving feast like Easter is re-dated each year.
+    active_from = models.DateField(null=True, blank=True)
+    active_to = models.DateField(null=True, blank=True)
     sort_order = models.IntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["channel", "sort_order", "name"]
+
+    @property
+    def window(self):
+        """(from, to) when this template has a date window, else None."""
+        if self.active_from and self.active_to:
+            return (self.active_from, self.active_to)
+        return None
+
+    def active_on(self, day):
+        """True when `day` falls inside this template's window."""
+        w = self.window
+        return bool(w and w[0] <= day <= w[1])
+
+    @property
+    def window_days(self):
+        """Length of the window in days; a large number when there is none, so
+        sorting puts the narrowest — most specific — window first."""
+        w = self.window
+        return (w[1] - w[0]).days if w else 10 ** 6
 
     def __str__(self):
         return f"{self.get_channel_display()}: {self.name}"

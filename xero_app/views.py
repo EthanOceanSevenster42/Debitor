@@ -749,11 +749,38 @@ def _days_overdue_phrase(days):
 
 
 def _ordered_templates(channel):
-    """Active templates for a channel, default first, then by sort order/name."""
-    return sorted(
-        MessageTemplate.objects.filter(channel=channel),
-        key=lambda t: (not t.is_default, t.sort_order, t.name.lower()),
-    )
+    """Templates for a channel, the one to use first, then by sort order / name.
+
+    A template whose date window covers today outranks the standing default for
+    as long as that window lasts — that is how the festive reminder takes over
+    in December and stands down in January without anyone switching it by hand.
+    Where two windows overlap the narrower one wins, so a specific week beats a
+    whole month.
+    """
+    today = timezone.localdate()
+
+    def rank(t):
+        live = t.active_on(today)
+        return (
+            not live,
+            # Window length only separates templates that are actually live;
+            # left in unconditionally it ranked the narrowest window first even
+            # on a day when no window applied, hiding the standing default.
+            t.window_days if live else 0,
+            not t.is_default,
+            t.sort_order,
+            t.name.lower(),
+        )
+
+    return sorted(MessageTemplate.objects.filter(channel=channel), key=rank)
+
+
+def _seasonal_template(channel):
+    """The template currently taking over from the default, or None."""
+    today = timezone.localdate()
+    in_window = [t for t in MessageTemplate.objects.filter(channel=channel)
+                 if t.active_on(today)]
+    return min(in_window, key=lambda t: t.window_days) if in_window else None
 
 
 def _whatsapp_options(templates, number, fields):
@@ -1581,6 +1608,59 @@ def xero_debtor_comment_add(request):
 
 @login_required
 @require_POST
+def xero_debtor_comment_delete(request):
+    """Remove a comment from a debtor's chat.
+
+    The author may remove their own — the common case is a note posted with the
+    wrong text pasted in — and a Super Admin may remove any. Nothing is really
+    deleted: the row is marked, the thread shows that a comment was removed and
+    by whom, and the original wording goes to the audit log, because the chat is
+    part of the collections record and a silent gap in it is worse than a visible
+    one. A reply that answered the comment keeps its place either way."""
+    tenant_id = _current_tenant_id(request)
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    if not tenant_id:
+        return JsonResponse({"error": "Not connected to Xero."}, status=400)
+
+    c = DebtorComment.objects.filter(id=request.POST.get("id") or 0,
+                                     tenant_id=tenant_id).first()
+    if c is None:
+        return JsonResponse({"error": "Comment not found."}, status=404)
+    if c.deleted_at:
+        return JsonResponse({"ok": True})          # already gone; nothing to do
+
+    own = c.author_id and c.author_id == request.user.id
+    if not (own or request.user.is_super_admin):
+        # Logged as well: somebody reaching for another person's note is worth a
+        # record, and the middleware row is skipped for this view.
+        _audit_log(request.user, AuditLog.ACTION_CHANGE,
+                   label="Refused: remove another user's comment",
+                   url_name="xero_debtor_comment_delete", method="POST",
+                   path=request.path, status=403,
+                   params={"refused": True,
+                           "debtor": c.contact_name or c.contact_id,
+                           "written_by": c.author_name})
+        return JsonResponse({"error": "You can only remove your own comments."}, status=403)
+
+    who = request.user.get_full_name() or request.user.email
+    _audit_log(request.user, AuditLog.ACTION_CHANGE,
+               label="Removed a debtor comment",
+               url_name="xero_debtor_comment_delete", method="POST", path=request.path,
+               params={"debtor": c.contact_name or c.contact_id,
+                       "written_by": c.author_name,
+                       "written_at": timezone.localtime(c.created_at).strftime("%Y-%m-%d %H:%M"),
+                       "text": c.text,
+                       "removed_own": bool(own)})
+    c.deleted_at = timezone.now()
+    c.deleted_by_name = who
+    c.save(update_fields=["deleted_at", "deleted_by_name"])
+    if is_ajax:
+        return JsonResponse({"ok": True})
+    return redirect(request.POST.get("next") or "xero_aging_report")
+
+
+@login_required
+@require_POST
 def xero_unwrite_off_invoice(request):
     """Reverse a write-off (moves the invoice back to the Debtors Action page).
     Always logs the reversal as a comment so the lifecycle shows the round trip."""
@@ -1954,25 +2034,46 @@ def xero_send_whatsapp(request, invoice_id):
         return JsonResponse({"error": "This template is not linked to an approved "
                                       "WhatsApp template."}, status=400)
 
+    # A template awaiting Meta's approval cannot be delivered. Catch it here
+    # rather than letting WATI accept the send and Meta reject it afterwards -
+    # an unconfirmed send still logs a reminder nobody received. Only a KNOWN
+    # bad status blocks: template_status returns None when it cannot tell, so a
+    # WATI outage does not stop every reminder going out.
+    status = wati.template_status(tpl.wati_template_name)
+    if status is not None and status != "approved":
+        return JsonResponse(
+            {"error": f"“{tpl.wati_template_name}” is {status} on WhatsApp, not approved yet. "
+                      "It can be used once Meta approves it."}, status=400)
+
+    # The cached Xero contact is read either way: it carries the account number
+    # the seasonal templates ask for, and it is the fallback for the phone number.
+    cached = ContactDetail.objects.filter(
+        tenant_id=tenant_id, contact_id=snap["contact_id"] or "").first()
+    contact_data = json.loads(cached.data_json) if cached and cached.data_json else {}
+
     # Prefer the number the page already resolved; fall back to the cached Xero
     # contact so a stale page cannot send to the wrong debtor.
     number = _wa_format_phone(request.POST.get("to") or "")
     if not number:
-        cached = ContactDetail.objects.filter(
-            tenant_id=tenant_id, contact_id=snap["contact_id"] or "").first()
-        data = json.loads(cached.data_json) if cached and cached.data_json else {}
-        number = _pick_whatsapp_number(data)
+        number = _pick_whatsapp_number(contact_data)
     if not number:
         return JsonResponse({"error": "No WhatsApp number on file for this debtor."}, status=400)
 
     amount = snap["amount_due"]
+    due = snap["due_date"]
     params = {
         "name": snap["contact_name"] or "",
+        # Xero's AccountNumber for the debtor, quoted by the seasonal templates
+        # as "Account/Customer Number". Blank for a contact with none set.
+        "account_number": contact_data.get("account_number") or "",
         "invoice_number": snap["invoice_number"] or "",
         "amount": f"{float(amount):,.2f}" if amount is not None else "0.00",
         "days_overdue": _wati_days_phrase(snap["days_past_due"]),
         "days_past_due": snap["days_past_due"] or 0,
-        "due_date": snap["due_date"].isoformat() if snap["due_date"] else "",
+        # Written out rather than ISO: this lands in a customer-facing message,
+        # and the approved templates were sampled as "15 December 2026". day is
+        # used directly so there is no leading zero on single-digit dates.
+        "due_date": f"{due.day} {due:%B %Y}" if due else "",
     }
     try:
         result = wati.send_template_message(number, tpl.wati_template_name, params)
@@ -2875,6 +2976,13 @@ def xero_debtor_statement(request):
     for c in all_comments:
         if c.parent_id:
             replies_by_parent.setdefault(c.parent_id, []).append(c)
+    # Who may take a comment down: its author, or a Super Admin.
+    can_remove_any = request.user.is_super_admin
+    for c in all_comments:
+        c.can_remove = bool(not c.deleted_at
+                            and (can_remove_any
+                                 or (c.author_id and c.author_id == request.user.id)))
+
     threads = []
     for c in all_comments:
         if c.parent_id:
@@ -3641,6 +3749,24 @@ _TEMPLATE_SAMPLE = dict(
 )
 
 
+def _window_from_post(request):
+    """(active_from, active_to) off the form, or (None, None).
+
+    A window needs both ends, and the pair is dropped if it is the wrong way
+    round — better no window than one that silently never matches.
+    """
+    def d(field):
+        raw = (request.POST.get(field) or "").strip()
+        try:
+            return date.fromisoformat(raw) if raw else None
+        except ValueError:
+            return None
+    a, b = d("active_from"), d("active_to")
+    if a and b and a <= b:
+        return a, b
+    return None, None
+
+
 def _ensure_one_default(channel):
     """Guarantee exactly one default template for a channel (if any exist)."""
     tpls = list(MessageTemplate.objects.filter(channel=channel).order_by("sort_order", "name"))
@@ -3679,6 +3805,7 @@ def xero_communication_setup(request):
                 wati_template_name=((request.POST.get("wati_template_name") or "").strip()[:200]
                                     if channel == MessageTemplate.CHANNEL_WHATSAPP else ""),
                 is_default=first, sort_order=last_order + 1, updated_by=who,
+                **dict(zip(("active_from", "active_to"), _window_from_post(request))),
             )
             messages.success(request, f"Template “{name}” added.")
 
@@ -3691,6 +3818,7 @@ def xero_communication_setup(request):
                 else:
                     t.wati_template_name = (request.POST.get("wati_template_name") or "").strip()[:200]
                 t.body = (request.POST.get("body") or "").strip()
+                t.active_from, t.active_to = _window_from_post(request)
                 t.updated_by = who
                 t.save()
                 messages.success(request, f"Template “{t.name}” saved.")
@@ -3715,7 +3843,9 @@ def xero_communication_setup(request):
         return redirect("xero_communication_setup")
 
     def with_preview(tpls):
+        today = timezone.localdate()
         for t in tpls:
+            t.active_on_today = t.active_on(today)
             t.preview_subject = _render_wa_message(t.subject or DEFAULT_EMAIL_SUBJECT, **_TEMPLATE_SAMPLE)
             t.preview_body = _render_wa_message(t.body or "", **_TEMPLATE_SAMPLE)
         return tpls
@@ -3725,7 +3855,12 @@ def xero_communication_setup(request):
     # Approved WhatsApp templates to choose from. Only these can be sent by the
     # app: Meta refuses free-form wording to a debtor who has not messaged us in
     # the last 24 hours, so the local body is a preview and this is what ships.
-    approved_wa = [t for t in wati.list_templates() if t["status"] == "approved"]
+    # Every template on the account, so one awaiting Meta shows here instead of
+    # looking like the submission never happened. Only approved ones are
+    # selectable below — nothing else can actually be delivered.
+    all_wa = wati.list_templates()
+    approved_wa = [t for t in all_wa if t["status"] == "approved"]
+    pending_wa = [t for t in all_wa if t["status"] != "approved"]
     return render(request, "xero/communication_setup.html", {
         "email_templates": email_templates,
         "wa_templates": wa_templates,
@@ -3736,6 +3871,10 @@ def xero_communication_setup(request):
         "whatsapp_api_enabled": wati.is_configured(),
         "wati_templates": approved_wa,
         "wati_template_names": [t["name"] for t in approved_wa],
+        "wati_pending": pending_wa,
+        "today": timezone.localdate(),
+        "seasonal_wa": _seasonal_template(MessageTemplate.CHANNEL_WHATSAPP),
+        "seasonal_email": _seasonal_template(MessageTemplate.CHANNEL_EMAIL),
     })
 
 

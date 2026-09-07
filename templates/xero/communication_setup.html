@@ -26,6 +26,18 @@
     .ph-table code { background: #f1f5f5; color: #0f4c4c; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
     .btn-danger { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
     .btn-danger:hover { background: #b91c1c; color: #fff; }
+    .tpl-window { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .tpl-window input[type=date] { border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 9px; font: inherit; font-size: 12.5px; }
+    .win-tag { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+        padding: 2px 8px; border-radius: 10px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; white-space: nowrap; }
+    .win-tag.live { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .wa-status { margin: 10px 0 0; padding: 10px 12px; border: 1px dashed #e2e8f0; border-radius: 10px; background: #fcfcfd; }
+    .wa-status .ws-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #64748b; margin-bottom: 6px; }
+    .wa-status .ws-row { font-size: 12.5px; color: #334155; display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+    .ws-pill { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 1px 7px;
+        border-radius: 9px; white-space: nowrap; }
+    .ws-pill.pending { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
+    .ws-pill.rejected { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
 </style>
 {% endblock %}
 {% block content %}
@@ -53,6 +65,13 @@
             <input type="text" name="name" value="{{ t.name }}">
             <label>Subject</label>
             <input type="text" name="subject" value="{{ t.subject }}">
+            <label>Use automatically between <span class="muted" style="font-weight:400;">&mdash; leave blank for no date rule</span></label>
+            <div class="tpl-window">
+                <input type="date" name="active_from" value="{{ t.active_from|date:'Y-m-d' }}">
+                <span class="muted">to</span>
+                <input type="date" name="active_to" value="{{ t.active_to|date:'Y-m-d' }}">
+                {% if t.window %}<span class="win-tag{% if t.active_on_today %} live{% endif %}">{% if t.active_on_today %}Active now{% else %}{{ t.active_from|date:"j M Y" }} &ndash; {{ t.active_to|date:"j M Y" }}{% endif %}</span>{% endif %}
+            </div>
             <label>Body</label>
             <textarea name="body">{{ t.body }}</textarea>
             <div class="preview-line"><span class="pl-label">Preview (sample invoice)</span><strong>{{ t.preview_subject }}</strong>{% if t.preview_body %}
@@ -79,6 +98,12 @@
             <input type="text" name="name" placeholder="e.g. Final notice">
             <label>Subject</label>
             <input type="text" name="subject" value="{{ default_email_subject }}">
+            <label>Use automatically between <span class="muted" style="font-weight:400;">&mdash; leave blank for no date rule</span></label>
+            <div class="tpl-window">
+                <input type="date" name="active_from">
+                <span class="muted">to</span>
+                <input type="date" name="active_to">
+            </div>
             <label>Body</label>
             <textarea name="body" placeholder="Type the email body…">{{ default_email_body }}</textarea>
             <div class="tpl-actions"><button type="submit" class="btn btn-primary btn-sm">Add email template</button></div>
@@ -89,7 +114,19 @@
     <div class="cs-card">
         <h2>&#128241; WhatsApp templates</h2>
         <p class="cs-sub">WhatsApp uses the body only (no subject).
-            {% if whatsapp_api_enabled %}Link a template to an <strong>approved WhatsApp template</strong> below and the button sends it straight to the customer. Left unlinked, it keeps the old behaviour: the message opens pre-filled in WhatsApp and the user presses send.{% else %}The message opens pre-filled in WhatsApp; the user still presses send.{% endif %}</p>
+            {% if whatsapp_api_enabled %}Link a template to an <strong>approved WhatsApp template</strong> below and the button sends it straight to the customer. Left unlinked it cannot be sent at all, and the per-invoice button will not offer it.{% else %}WhatsApp sending is not set up, so no reminder can go out &mdash; add the WhatsApp Business details to enable it.{% endif %}</p>
+        {% if whatsapp_api_enabled and wati_pending %}
+        {% comment %}Templates on the WATI account that cannot be selected yet.
+        Without this a template awaiting Meta is invisible here, and a submission
+        looks like it never happened.{% endcomment %}
+        <div class="wa-status">
+            <div class="ws-title">Waiting on WhatsApp approval</div>
+            {% for w in wati_pending %}
+            <div class="ws-row"><span class="ws-pill {{ w.status }}">{{ w.status }}</span> {{ w.name }}{% if w.params %} <span class="muted">({{ w.params|join:", " }})</span>{% endif %}</div>
+            {% endfor %}
+            <div class="ws-row muted" style="margin-top:6px;">These become selectable above once Meta approves them. Approval usually takes under an hour.</div>
+        </div>
+        {% endif %}
         {% if whatsapp_api_enabled %}
         <p class="cs-sub" style="font-size:12px;">WhatsApp only allows free-form text within 24 hours of the customer messaging you, so reminders must go out as a template Meta has approved. The message box below is the wording <em>you</em> see; the approved template is what the customer receives. Create and submit templates in Wati &rarr; Campaigns &rarr; Templates.</p>
         {% endif %}
@@ -107,7 +144,7 @@
             {% if whatsapp_api_enabled %}
             <label>Approved WhatsApp template <span class="muted" style="font-weight:400;">&mdash; sends automatically when set</span></label>
             <select name="wati_template_name">
-                <option value="">&mdash; Not linked (opens WhatsApp for the user to send) &mdash;</option>
+                <option value="">&mdash; Not linked (cannot be sent) &mdash;</option>
                 {% for w in wati_templates %}
                 <option value="{{ w.name }}" {% if w.name == t.wati_template_name %}selected{% endif %}>{{ w.name }}{% if w.params %} ({{ w.params|join:", " }}){% endif %}</option>
                 {% endfor %}
@@ -117,6 +154,13 @@
                 {% endif %}
             </select>
             {% endif %}
+            <label>Use automatically between <span class="muted" style="font-weight:400;">&mdash; leave blank for no date rule</span></label>
+            <div class="tpl-window">
+                <input type="date" name="active_from" value="{{ t.active_from|date:'Y-m-d' }}">
+                <span class="muted">to</span>
+                <input type="date" name="active_to" value="{{ t.active_to|date:'Y-m-d' }}">
+                {% if t.window %}<span class="win-tag{% if t.active_on_today %} live{% endif %}">{% if t.active_on_today %}Active now{% else %}{{ t.active_from|date:"j M Y" }} &ndash; {{ t.active_to|date:"j M Y" }}{% endif %}</span>{% endif %}
+            </div>
             <label>Message</label>
             <textarea name="body">{{ t.body }}</textarea>
             <div class="preview-line"><span class="pl-label">Preview (sample invoice)</span>{{ t.preview_body }}</div>
@@ -142,12 +186,18 @@
             {% if whatsapp_api_enabled %}
             <label>Approved WhatsApp template <span class="muted" style="font-weight:400;">&mdash; sends automatically when set</span></label>
             <select name="wati_template_name">
-                <option value="">&mdash; Not linked (opens WhatsApp for the user to send) &mdash;</option>
+                <option value="">&mdash; Not linked (cannot be sent) &mdash;</option>
                 {% for w in wati_templates %}
                 <option value="{{ w.name }}">{{ w.name }}{% if w.params %} ({{ w.params|join:", " }}){% endif %}</option>
                 {% endfor %}
             </select>
             {% endif %}
+            <label>Use automatically between <span class="muted" style="font-weight:400;">&mdash; leave blank for no date rule</span></label>
+            <div class="tpl-window">
+                <input type="date" name="active_from">
+                <span class="muted">to</span>
+                <input type="date" name="active_to">
+            </div>
             <label>Message</label>
             <textarea name="body" placeholder="Type the WhatsApp message…">{{ default_wa_body }}</textarea>
             <div class="tpl-actions"><button type="submit" class="btn btn-primary btn-sm">Add WhatsApp template</button></div>

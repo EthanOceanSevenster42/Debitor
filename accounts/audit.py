@@ -41,6 +41,7 @@ FRIENDLY_LABELS = {
     'xero_unlog_contact': 'Removed a contact mark',
     'xero_add_comment': 'Added an invoice comment',
     'xero_debtor_comment_add': 'Added a debtor comment',
+    'xero_debtor_comment_delete': 'Removed a debtor comment',
     'xero_followup_shift': 'Changed a follow-up schedule',
     # Close / write-off
     'xero_close_debtor': 'Marked a debtor closed',
@@ -127,6 +128,18 @@ def humanize_entry(url_name, label, params, user_names):
 
     if url_name == 'xero_debtor_comment_add':
         return _with_quote(format_html('commented on {}', _bold(company)), quote)
+
+    if url_name == 'xero_debtor_comment_delete':
+        if params.get('refused'):
+            return format_html('tried to remove {}’s comment on {} — not permitted',
+                               _bold(params.get('written_by') or 'another user'),
+                               _bold(params.get('debtor') or 'a debtor'))
+        return _with_quote(
+            format_html('removed {} comment on {}',
+                        'their own' if params.get('removed_own') else
+                        format_html('{}’s', params.get('written_by') or 'a'),
+                        _bold(params.get('debtor') or 'a debtor')),
+            params.get('text') or '')
 
     # Notifications. These two are the durable record of who was told what: a
     # recipient can delete a notice off their own list, so the sentence has to
@@ -222,9 +235,11 @@ class AuditLogMiddleware:
     GET/HEAD/OPTIONS). Sign-in/out are recorded by the auth signals below,
     so those two URLs are skipped here."""
 
-    # xero_notice_delete writes its own audit entry carrying the full text of
-    # every deleted notification; the routine ids-only row here would duplicate it.
-    SKIP_URL_NAMES = {'login', 'logout', 'xero_notice_delete'}
+    # These write their own audit entries, carrying the full text of what was
+    # removed and saying so when an attempt was refused. The routine ids-only row
+    # here would both duplicate that and read as though a refusal had succeeded.
+    SKIP_URL_NAMES = {'login', 'logout', 'xero_notice_delete',
+                      'xero_debtor_comment_delete'}
 
     def __init__(self, get_response):
         self.get_response = get_response
