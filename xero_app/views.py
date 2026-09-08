@@ -803,8 +803,12 @@ def _whatsapp_options(templates, number, fields):
         return [], "No WhatsApp number on file for this debtor in Xero."
     # Meta refuses free-form text to someone who has not messaged us in the last
     # 24 hours, so only a template mapped to an approved one can go out.
+    # Preview the approved wording, cached from the WhatsApp account — that is
+    # what the debtor actually receives. The old local body is only a fallback for
+    # a row that has not been synced yet.
     out = [{"id": t.id, "label": t.name,
-            "preview": _render_wa_message(t.body or DEFAULT_WA_TEMPLATE, **fields)}
+            "preview": _render_wa_message(t.wati_body or t.body or DEFAULT_WA_TEMPLATE,
+                                          **fields)}
            for t in templates if t.wati_template_name]
     if not out:
         return [], ("No WhatsApp template is linked to an approved WhatsApp "
@@ -3736,16 +3740,18 @@ _TEMPLATE_PLACEHOLDERS = [
     ("amount", "Amount due, formatted (e.g. 68,878.21)"),
     ("days_past_due", "Integer days past due (e.g. 72)"),
     ("days_overdue", 'Phrase: "72 days overdue", "due today", "due in 5 days"'),
-    ("due_date", "Due date in YYYY-MM-DD"),
+    ("due_date", "Due date, written out (e.g. 15 December 2026)"),
+    ("account_number", "The debtor's account number from Xero"),
 ]
 
 _TEMPLATE_SAMPLE = dict(
     name="Crown Chickens (Pty) Ltd",
+    account_number="FSA-1042",
     invoice_number="INV-45301",
     amount="68,878.21",
     days_past_due=72,
     days_overdue=_days_overdue_phrase(72),
-    due_date="2026-03-22",
+    due_date="22 March 2026",
 )
 
 
@@ -3793,7 +3799,10 @@ def xero_communication_setup(request):
         channel = (request.POST.get("channel") or "").strip()
         who = request.user.email
 
-        if action == "add" and channel in (MessageTemplate.CHANNEL_EMAIL, MessageTemplate.CHANNEL_WHATSAPP):
+        # WhatsApp wording is owned by the WhatsApp account: it has to be created
+        # and approved there, and nothing typed here could ever be delivered. Only
+        # email templates are authored in this app.
+        if action == "add" and channel == MessageTemplate.CHANNEL_EMAIL:
             name = (request.POST.get("name") or "").strip() or "Untitled template"
             first = not MessageTemplate.objects.filter(channel=channel).exists()
             last_order = (MessageTemplate.objects.filter(channel=channel)
@@ -3815,9 +3824,10 @@ def xero_communication_setup(request):
                 t.name = ((request.POST.get("name") or "").strip() or t.name)[:120]
                 if t.channel == MessageTemplate.CHANNEL_EMAIL:
                     t.subject = (request.POST.get("subject") or "").strip()
-                else:
-                    t.wati_template_name = (request.POST.get("wati_template_name") or "").strip()[:200]
-                t.body = (request.POST.get("body") or "").strip()
+                    t.body = (request.POST.get("body") or "").strip()
+                # A WhatsApp row's wording and its link both belong to the
+                # WhatsApp account; only the display name and the date window are
+                # ours to change.
                 t.active_from, t.active_to = _window_from_post(request)
                 t.updated_by = who
                 t.save()
@@ -3851,7 +3861,6 @@ def xero_communication_setup(request):
         return tpls
 
     email_templates = with_preview(_ordered_templates(MessageTemplate.CHANNEL_EMAIL))
-    wa_templates = with_preview(_ordered_templates(MessageTemplate.CHANNEL_WHATSAPP))
     # Approved WhatsApp templates to choose from. Only these can be sent by the
     # app: Meta refuses free-form wording to a debtor who has not messaged us in
     # the last 24 hours, so the local body is a preview and this is what ships.
@@ -3861,6 +3870,38 @@ def xero_communication_setup(request):
     all_wa = wati.list_templates()
     approved_wa = [t for t in all_wa if t["status"] == "approved"]
     pending_wa = [t for t in all_wa if t["status"] != "approved"]
+
+    # Mirror each approved template into a local row so it can carry a display
+    # name, a date window and the default flag. Created on sight, so a template
+    # approved five minutes ago is ready to configure without anyone adding it by
+    # hand — there is no "add" for this channel, because wording that did not come
+    # from the WhatsApp account could never be sent.
+    live_names = set()
+    for w in approved_wa:
+        live_names.add(w["name"])
+        row, created = MessageTemplate.objects.get_or_create(
+            channel=MessageTemplate.CHANNEL_WHATSAPP, wati_template_name=w["name"],
+            defaults={"name": w["name"], "sort_order": 100, "updated_by": "wati sync"},
+        )
+        # Refresh the cached wording every visit: it is what per-invoice previews
+        # read, and it changes whenever the template is edited on the account.
+        if row.wati_body != w["body"] or row.wati_category != w["category"]:
+            row.wati_body, row.wati_category = w["body"], w["category"]
+            row.save(update_fields=["wati_body", "wati_category"])
+        if created:
+            _ensure_one_default(MessageTemplate.CHANNEL_WHATSAPP)
+    wa_rows = with_preview(_ordered_templates(MessageTemplate.CHANNEL_WHATSAPP))
+    for t in wa_rows:
+        # The approved wording with this sample invoice filled in, so the page
+        # shows what a debtor actually receives rather than a local paraphrase.
+        t.preview_body = _render_wa_message(t.wati_body, **_TEMPLATE_SAMPLE)
+        t.wati_params = next((w["params"] for w in approved_wa
+                              if w["name"] == t.wati_template_name), [])
+    wa_templates = [t for t in wa_rows if t.wati_template_name in live_names]
+    # Rows whose template is gone from the account, or was never linked. Shown so
+    # a stale default is visible rather than silently unusable.
+    wa_orphans = [t for t in wa_rows if t.wati_template_name not in live_names]
+
     return render(request, "xero/communication_setup.html", {
         "email_templates": email_templates,
         "wa_templates": wa_templates,
@@ -3872,6 +3913,7 @@ def xero_communication_setup(request):
         "wati_templates": approved_wa,
         "wati_template_names": [t["name"] for t in approved_wa],
         "wati_pending": pending_wa,
+        "wa_orphans": wa_orphans,
         "today": timezone.localdate(),
         "seasonal_wa": _seasonal_template(MessageTemplate.CHANNEL_WHATSAPP),
         "seasonal_email": _seasonal_template(MessageTemplate.CHANNEL_EMAIL),

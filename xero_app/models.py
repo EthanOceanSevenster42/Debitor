@@ -556,6 +556,12 @@ class MessageTemplate(models.Model):
     # names what actually ships. Blank means this template cannot be sent, so the
     # per-invoice WhatsApp button does not offer it at all.
     wati_template_name = models.CharField(max_length=200, blank=True, default="")
+    # The approved wording as it stands on the WhatsApp account, cached when
+    # Communication Setup last synced. Kept locally so a per-invoice preview does
+    # not need a WATI round trip on every statement render. Variables are stored
+    # in our own {name} form rather than WhatsApp's positional {{1}}.
+    wati_body = models.TextField(blank=True, default="")
+    wati_category = models.CharField(max_length=40, blank=True, default="")
     is_default = models.BooleanField(default=False)
     # A seasonal template takes over automatically while today falls inside its
     # window, so nobody has to remember to switch the default on 7 December and

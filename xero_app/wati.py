@@ -23,6 +23,7 @@ tree (/api/ext/v3) and carry their own tenant, so there is no tenant id in the
 path. The older /{tenantId}/api/v1/... shape returns 403 for them.
 """
 import logging
+import re
 import time
 
 import requests
@@ -80,12 +81,30 @@ def list_templates():
         return []
     out = []
     for t in data.get("templates") or []:
+        params = [p.get("name") for p in (t.get("custom_params") or []) if p.get("name")]
         out.append({
             "name": t.get("name") or "",
             "status": (t.get("status") or "").lower(),
-            "params": [p.get("name") for p in (t.get("custom_params") or []) if p.get("name")],
+            "category": (t.get("category") or "").upper(),
+            "params": params,
+            # WhatsApp stores the wording with positional {{1}}, {{2}}... and the
+            # names alongside. Rewritten here into the {name} form used
+            # everywhere else, so one placeholder style is shown to operators.
+            "body": named_body(t.get("body") or "", params),
+            "footer": t.get("footer") or "",
         })
     return sorted(out, key=lambda t: t["name"].lower())
+
+
+def named_body(body, params):
+    """Turn WhatsApp's positional {{1}} placeholders into named {variable} ones.
+
+    A number left without a matching parameter is kept as-is rather than dropped,
+    so a mismatch shows on the page instead of quietly rendering a blank."""
+    def swap(m):
+        i = int(m.group(1)) - 1
+        return "{%s}" % params[i] if 0 <= i < len(params) else m.group(0)
+    return re.sub(r"\{\{\s*(\d+)\s*\}\}", swap, body or "")
 
 
 def approved_template_names():

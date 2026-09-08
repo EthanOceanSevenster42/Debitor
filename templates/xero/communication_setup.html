@@ -10,8 +10,9 @@
     .tpl-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
     .tpl-head .nm { font-weight: 700; color: var(--navy); }
     .badge-default { font-size: 11px; font-weight: 700; color: #166534; background: #dcfce7; border: 1px solid #86efac; border-radius: 10px; padding: 1px 8px; }
-    .tpl label, .add-tpl label { display: block; font-size: 12px; font-weight: 600; color: #475569; margin: 8px 0 3px; }
+    .tpl label, .add-tpl label, .wa-detail label { display: block; font-size: 12px; font-weight: 600; color: #475569; margin: 8px 0 3px; }
     .tpl input[type=text], .tpl textarea,
+    .wa-detail input[type=text] { width: 100%; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 13.5px; box-sizing: border-box; }
     .add-tpl input[type=text], .add-tpl textarea { width: 100%; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-family: 'Segoe UI', Roboto, sans-serif; font-size: 13.5px; box-sizing: border-box; }
     .tpl textarea, .add-tpl textarea { min-height: 120px; resize: vertical; }
     .tpl-actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
@@ -38,7 +39,41 @@
         border-radius: 9px; white-space: nowrap; }
     .ws-pill.pending { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
     .ws-pill.rejected { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .ws-pill.approved { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    /* The approved wording, shown but not editable: it lives on the WhatsApp
+       account and only Meta can change what may be sent. */
+    .wa-locked { border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; padding: 9px 11px; }
+    .wa-locked-name { font-size: 11.5px; font-weight: 700; color: #475569; font-family: ui-monospace, Consolas, monospace; margin-bottom: 6px; }
+    .wa-body { margin: 0; font-family: inherit; font-size: 13px; color: #1f2937; white-space: pre-wrap;
+        word-wrap: break-word; line-height: 1.45; border: 1px solid #e2e8f0; border-radius: 8px;
+        background: #f8fafc; padding: 9px 11px; }
+    .wa-default-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 14px;
+        padding: 11px 13px; border: 1px solid #d6efee; border-radius: 10px; background: #f5fbfb; }
+    .wa-default-pick label { font-size: 12.5px; font-weight: 700; color: #475569; margin: 0; }
+    .wa-default-pick select { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; font-size: 13px; }
+    .wa-default-pick .muted { font-size: 11.5px; }
+    /* One line per template; the wording only appears for the one you open. */
+    .wa-list { display: flex; flex-direction: column; gap: 4px; }
+    .wa-item { border: 1px solid #e5e7eb; border-radius: 9px; background: #fff; }
+    .wa-item:has(.wa-detail:not([hidden])) { border-color: #b8e0de; background: #fbfeff; }
+    .wa-head { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+        background: none; border: none; padding: 9px 12px; font: inherit; cursor: pointer; }
+    .wa-caret { font-size: 9px; color: #94a3b8; transition: transform .15s; }
+    .wa-item:has(.wa-detail:not([hidden])) .wa-caret { transform: rotate(90deg); }
+    .wa-name { font-size: 13.5px; font-weight: 700; color: var(--navy); }
+    .wa-ref { margin-left: auto; font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #94a3b8; }
+    .wa-detail { padding: 4px 12px 12px; }
+    .wa-detail[hidden] { display: none; }
 </style>
+<script>
+// Open one template to read its wording and set its dates. Nothing is fetched —
+// every row is already rendered, just collapsed so the page stays short.
+function toggleWaTemplate(btn) {
+    var d = btn.nextElementSibling;
+    d.hidden = !d.hidden;
+    btn.setAttribute('aria-expanded', d.hidden ? 'false' : 'true');
+}
+</script>
 {% endblock %}
 {% block content %}
 <div class="page-card">
@@ -113,95 +148,81 @@
     {# ---- WhatsApp templates ---- #}
     <div class="cs-card">
         <h2>&#128241; WhatsApp templates</h2>
-        <p class="cs-sub">WhatsApp uses the body only (no subject).
-            {% if whatsapp_api_enabled %}Link a template to an <strong>approved WhatsApp template</strong> below and the button sends it straight to the customer. Left unlinked it cannot be sent at all, and the per-invoice button will not offer it.{% else %}WhatsApp sending is not set up, so no reminder can go out &mdash; add the WhatsApp Business details to enable it.{% endif %}</p>
-        {% if whatsapp_api_enabled and wati_pending %}
-        {% comment %}Templates on the WATI account that cannot be selected yet.
-        Without this a template awaiting Meta is invisible here, and a submission
-        looks like it never happened.{% endcomment %}
-        <div class="wa-status">
-            <div class="ws-title">Waiting on WhatsApp approval</div>
-            {% for w in wati_pending %}
-            <div class="ws-row"><span class="ws-pill {{ w.status }}">{{ w.status }}</span> {{ w.name }}{% if w.params %} <span class="muted">({{ w.params|join:", " }})</span>{% endif %}</div>
-            {% endfor %}
-            <div class="ws-row muted" style="margin-top:6px;">These become selectable above once Meta approves them. Approval usually takes under an hour.</div>
-        </div>
-        {% endif %}
-        {% if whatsapp_api_enabled %}
-        <p class="cs-sub" style="font-size:12px;">WhatsApp only allows free-form text within 24 hours of the customer messaging you, so reminders must go out as a template Meta has approved. The message box below is the wording <em>you</em> see; the approved template is what the customer receives. Create and submit templates in Wati &rarr; Campaigns &rarr; Templates.</p>
-        {% endif %}
-
-        {% for t in wa_templates %}
-        <form method="post" class="tpl {% if t.is_default %}is-default{% endif %}">
-            {% csrf_token %}
-            <input type="hidden" name="id" value="{{ t.id }}">
-            <div class="tpl-head">
-                <span class="nm">{{ t.name }}</span>
-                {% if t.is_default %}<span class="badge-default">Default</span>{% endif %}
-            </div>
-            <label>Template name</label>
-            <input type="text" name="name" value="{{ t.name }}">
-            {% if whatsapp_api_enabled %}
-            <label>Approved WhatsApp template <span class="muted" style="font-weight:400;">&mdash; sends automatically when set</span></label>
-            <select name="wati_template_name">
-                <option value="">&mdash; Not linked (cannot be sent) &mdash;</option>
-                {% for w in wati_templates %}
-                <option value="{{ w.name }}" {% if w.name == t.wati_template_name %}selected{% endif %}>{{ w.name }}{% if w.params %} ({{ w.params|join:", " }}){% endif %}</option>
-                {% endfor %}
-                {# Keep a mapping whose template vanished from Wati visible rather than silently clearing it. #}
-                {% if t.wati_template_name and t.wati_template_name not in wati_template_names %}
-                <option value="{{ t.wati_template_name }}" selected>{{ t.wati_template_name }} (not approved / not found)</option>
-                {% endif %}
-            </select>
-            {% endif %}
-            <label>Use automatically between <span class="muted" style="font-weight:400;">&mdash; leave blank for no date rule</span></label>
-            <div class="tpl-window">
-                <input type="date" name="active_from" value="{{ t.active_from|date:'Y-m-d' }}">
-                <span class="muted">to</span>
-                <input type="date" name="active_to" value="{{ t.active_to|date:'Y-m-d' }}">
-                {% if t.window %}<span class="win-tag{% if t.active_on_today %} live{% endif %}">{% if t.active_on_today %}Active now{% else %}{{ t.active_from|date:"j M Y" }} &ndash; {{ t.active_to|date:"j M Y" }}{% endif %}</span>{% endif %}
-            </div>
-            <label>Message</label>
-            <textarea name="body">{{ t.body }}</textarea>
-            <div class="preview-line"><span class="pl-label">Preview (sample invoice)</span>{{ t.preview_body }}</div>
-            <div class="tpl-actions">
-                <button type="submit" name="action" value="save" class="btn btn-primary btn-sm">Save</button>
-                {% if not t.is_default %}<button type="submit" name="action" value="make_default" class="btn btn-secondary btn-sm">Make default</button>{% endif %}
-                <span class="spacer"></span>
-                {% if not t.is_default %}<button type="submit" name="action" value="delete" class="btn btn-sm btn-danger"
-                        onclick="return confirm('Delete the WhatsApp template “{{ t.name|escapejs }}”?');">Delete</button>{% endif %}
-            </div>
-        </form>
-        {% empty %}
-        <p class="muted" style="font-size:13px;">No WhatsApp templates yet — add one below.</p>
+        <p class="cs-sub">{% if whatsapp_api_enabled %}These are the templates approved on your WhatsApp account &mdash; pick which the per-invoice button offers, give each a name your team will recognise, and set when it should be used. The wording itself is written and submitted for approval in Wati, because WhatsApp will only deliver templates Meta has approved.{% else %}WhatsApp sending is not set up, so no reminder can go out &mdash; add the WhatsApp Business details to enable it.{% endif %}</p>
+        {% comment %}Everything in this section comes from the WhatsApp account.
+    Wording cannot be written here: WhatsApp only delivers templates Meta has
+    approved, and there is no API to submit one for approval, so a template is
+    written and submitted in Wati and appears here once approved.{% endcomment %}
+    {% if wati_pending %}
+    <div class="wa-status">
+        <div class="ws-title">Waiting on WhatsApp approval</div>
+        {% for w in wati_pending %}
+        <div class="ws-row"><span class="ws-pill {{ w.status }}">{{ w.status }}</span> {{ w.name }}{% if w.params %} <span class="muted">({{ w.params|join:", " }})</span>{% endif %}</div>
         {% endfor %}
+        <div class="ws-row muted" style="margin-top:6px;">These appear below once Meta approves them. Approval usually takes under an hour.</div>
+    </div>
+    {% endif %}
 
-        <form method="post" class="add-tpl">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="add">
-            <input type="hidden" name="channel" value="whatsapp">
-            <h3>+ Add a WhatsApp template</h3>
-            <label>Template name</label>
-            <input type="text" name="name" placeholder="e.g. Friendly nudge">
-            {% if whatsapp_api_enabled %}
-            <label>Approved WhatsApp template <span class="muted" style="font-weight:400;">&mdash; sends automatically when set</span></label>
-            <select name="wati_template_name">
-                <option value="">&mdash; Not linked (cannot be sent) &mdash;</option>
-                {% for w in wati_templates %}
-                <option value="{{ w.name }}">{{ w.name }}{% if w.params %} ({{ w.params|join:", " }}){% endif %}</option>
-                {% endfor %}
-            </select>
-            {% endif %}
-            <label>Use automatically between <span class="muted" style="font-weight:400;">&mdash; leave blank for no date rule</span></label>
-            <div class="tpl-window">
-                <input type="date" name="active_from">
-                <span class="muted">to</span>
-                <input type="date" name="active_to">
-            </div>
-            <label>Message</label>
-            <textarea name="body" placeholder="Type the WhatsApp message…">{{ default_wa_body }}</textarea>
-            <div class="tpl-actions"><button type="submit" class="btn btn-primary btn-sm">Add WhatsApp template</button></div>
-        </form>
+    {% if wa_templates %}
+    {% comment %}Pick the default in one go, rather than hunting for a button
+    inside whichever card happens to be the right one.{% endcomment %}
+    <form method="post" class="wa-default-pick">
+        {% csrf_token %}
+        <label for="wa-default">Default template</label>
+        <select id="wa-default" name="id">
+            {% for t in wa_templates %}
+            <option value="{{ t.id }}" {% if t.is_default %}selected{% endif %}>{{ t.name }}{% if t.name != t.wati_template_name %} ({{ t.wati_template_name }}){% endif %}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" name="action" value="make_default" class="btn btn-primary btn-sm">Set default</button>
+        <span class="muted">Used unless a date rule below takes over.</span>
+    </form>
+    {% endif %}
+
+    <div class="wa-list">
+        {% for t in wa_templates %}
+        <div class="wa-item">
+            <button type="button" class="wa-head" aria-expanded="false" onclick="toggleWaTemplate(this);">
+                <span class="wa-caret">&#9656;</span>
+                <span class="wa-name">{{ t.name }}</span>
+                {% if t.is_default %}<span class="badge-default">Default</span>{% endif %}
+                {% if t.window %}<span class="win-tag{% if t.active_on_today %} live{% endif %}">{% if t.active_on_today %}Active now{% else %}{{ t.active_from|date:"j M" }} &ndash; {{ t.active_to|date:"j M" }}{% endif %}</span>{% endif %}
+                <span class="wa-ref">{{ t.wati_template_name }}</span>
+            </button>
+            <form method="post" class="wa-detail" hidden>
+                {% csrf_token %}
+                <input type="hidden" name="id" value="{{ t.id }}">
+                <label>Name shown to the team</label>
+                <input type="text" name="name" value="{{ t.name }}">
+                <label>Use automatically between <span class="muted" style="font-weight:400;">&mdash; leave blank for no date rule</span></label>
+                <div class="tpl-window">
+                    <input type="date" name="active_from" value="{{ t.active_from|date:'Y-m-d' }}">
+                    <span class="muted">to</span>
+                    <input type="date" name="active_to" value="{{ t.active_to|date:'Y-m-d' }}">
+                </div>
+                <label>Approved wording <span class="muted" style="font-weight:400;">&mdash; edited in Wati, not here</span></label>
+                <pre class="wa-body">{{ t.wati_body }}</pre>
+                <div class="preview-line"><span class="pl-label">What the customer receives (sample invoice)</span>{{ t.preview_body }}</div>
+                <div class="tpl-actions">
+                    <button type="submit" name="action" value="save" class="btn btn-primary btn-sm">Save</button>
+                </div>
+            </form>
+        </div>
+        {% empty %}
+        <p class="muted" style="font-size:13px;">No approved WhatsApp templates on the account yet. Create and submit them in Wati &rarr; Campaigns &rarr; Template Messages; they appear here once Meta approves them.</p>
+        {% endfor %}
+    </div>
+
+    {% if wa_orphans %}
+    <div class="wa-status">
+        <div class="ws-title">No longer on the WhatsApp account</div>
+        {% for t in wa_orphans %}
+        <div class="ws-row"><span class="ws-pill rejected">unavailable</span> {{ t.name }}{% if t.wati_template_name %} <span class="muted">({{ t.wati_template_name }})</span>{% endif %}
+            {% if t.is_default %}<strong>&mdash; currently the default</strong>{% endif %}</div>
+        {% endfor %}
+        <div class="ws-row muted" style="margin-top:6px;">These cannot be sent. Make an approved template the default instead.</div>
+    </div>
+    {% endif %}
     </div>
 
     {# ---- Placeholders ---- #}
