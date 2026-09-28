@@ -153,6 +153,16 @@
                 <div class="lm-fact-v{% if not m.amount_owed %} zero{% endif %}"
                      title="Total outstanding owed to FSA across all open invoices">R&nbsp;{{ m.amount_owed|floatformat:2|intcomma }}</div>
             </div>
+            {% if not user.is_lawyer %}
+            <div class="lm-fact">
+                <div class="lm-fact-k">Debtor clerk</div>
+                <div class="lm-fact-v{% if not m.clerk_name %} zero{% endif %}" style="font-size:13.5px;">{{ m.clerk_name|default:"Unallocated" }}</div>
+            </div>
+            {% endif %}
+            <div class="lm-fact">
+                <div class="lm-fact-k">Category</div>
+                <div class="lm-fact-v" style="font-size:13.5px;">{{ m.category_name }}</div>
+            </div>
             {% if m.status == 'active' %}
             <div class="lm-fact wide">
                 <div class="lm-fact-k">Workflow progress</div>

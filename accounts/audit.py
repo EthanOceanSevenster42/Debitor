@@ -29,6 +29,8 @@ _VALUE_LIMIT = 300
 FRIENDLY_LABELS = {
     # Debtors / collections
     'xero_allocate_debtor': 'Changed a debtor allocation',
+    'xero_debtor_category': 'Changed a debtor category',
+    'xero_categories': 'Changed debtor categories',
     'xero_notice_delete': 'Deleted notifications',
     # Not a route: written by _log_notices_raised when notifications go out, so
     # the log records who was told even if they later delete the notice.

@@ -1,0 +1,573 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Performance Reports - FSA Debtor System{% endblock %}
+
+{% block extra_head %}
+<style>
+    .lead { font-size: 14.5px; color: #334155; margin: 2px 0 10px; max-width: 900px; line-height: 1.5; }
+    .showing { font-size: 13.5px; color: var(--text-muted); margin: 0 0 12px; }
+    .showing strong { color: var(--text-dark); }
+
+    .howto { display: flex; flex-wrap: wrap; gap: 8px 22px; background: #f0fdfa; border: 1px solid #ccebe8; border-radius: 10px; padding: 10px 14px; margin: 0 0 14px; font-size: 13px; color: #134e4a; }
+    .howto span { display: flex; gap: 7px; align-items: baseline; }
+    .howto b { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border-radius: 50%; background: var(--brand-teal); color: #fff; font-size: 11px; flex: 0 0 19px; }
+
+    .rp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 4px 0 14px; }
+    .rp-bar .grp-label { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; }
+    .rp-tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .rp-tabs a { padding: 6px 13px; font-size: 13px; font-weight: 600; color: var(--text-dark); background: #fff; border-right: 1px solid var(--border); }
+    .rp-tabs a:last-child { border-right: 0; }
+    .rp-tabs a.on { background: var(--brand-teal); color: #fff; }
+    .rp-tabs a:hover { text-decoration: none; background: #f1f5f9; }
+    .rp-tabs a.on:hover { background: var(--brand-teal-dark); }
+    .rp-nav { display: inline-flex; align-items: center; gap: 6px; }
+    .rp-nav .lbl { font-weight: 700; font-size: 15px; color: var(--navy); min-width: 150px; text-align: center; }
+    .rp-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .rp-filters label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .rp-filters .form-control { width: auto; padding: 6px 10px; font-size: 13px; }
+
+    .rp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .rp-tile { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; }
+    .rp-tile .k { font-size: 12.5px; color: #475569; font-weight: 700; }
+    .rp-tile .v { font-size: 21px; font-weight: 800; color: var(--navy); margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .rp-tile .s { font-size: 12.5px; color: #64748b; margin-top: 4px; line-height: 1.45; }
+    .rp-tile.lead-tile { background: var(--brand-teal); border-color: var(--brand-teal); }
+    .rp-tile.lead-tile .k, .rp-tile.lead-tile .s { color: #d6f1f0; } .rp-tile.lead-tile .v { color: #fff; }
+    .rp-tile.alert { background: #fff7ed; border-color: #fed7aa; }
+    .delta { font-weight: 700; white-space: nowrap; }
+    .delta.up { color: #047857; } .delta.down { color: #b91c1c; } .delta.flat { color: #64748b; }
+
+    .rp-section h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .qn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 14px; font-weight: 800; flex: 0 0 28px; }
+    .what { background: #f8fafc; border-left: 3px solid var(--brand-teal); border-radius: 0 8px 8px 0; padding: 8px 12px; margin: -4px 0 12px; font-size: 13px; color: #334155; line-height: 1.55; max-width: 1000px; }
+    .rp-section h3 { margin: 18px 0 6px; font-size: 15px; color: var(--navy); }
+    .rp-section h3 + .what { margin-top: 0; }
+    .rp-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #eef2f4; border-radius: 10px; }
+    .rp-scroll .data-table { font-size: 13px; }
+    .rp-scroll .data-table th { padding: 9px 9px; }
+    .rp-scroll .data-table td { padding: 9px 9px; }
+    .data-table th[title] { cursor: help; text-decoration: underline dotted #94a3b8; text-underline-offset: 3px; }
+    .data-table th.num, .data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .data-table td.nm { white-space: nowrap; font-weight: 600; }
+    .data-table tr.tot td { font-weight: 800; background: #f8fafc; }
+    .data-table .sm { display: block; font-size: 11px; color: #94a3b8; font-weight: 500; }
+    .dash { color: #cbd5e1; }
+    .grp { border-left: 2px solid #eef2f4; }
+
+    .rp-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 1000px) { .rp-charts { grid-template-columns: 1fr; } }
+    .rp-chart { background: #fff; border: 1px solid #eef2f4; border-radius: 10px; padding: 12px 14px 10px; }
+    .rp-chart h4 { margin: 0 0 2px; font-size: 14px; color: var(--navy); }
+    .rp-chart .cap { font-size: 12px; color: #64748b; margin-bottom: 4px; }
+    .rpsvg { width: 100%; height: auto; display: block; overflow: visible; }
+    .rpsvg .grid { stroke: #eef2f4; stroke-width: 1; }
+    .rpsvg .ytick { fill: #94a3b8; font-size: 9.5px; font-variant-numeric: tabular-nums; }
+    .rpsvg .xtick { fill: #64748b; font-size: 10px; }
+    .rpsvg .rp-col:hover path { opacity: .85; }
+    .rp-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: #475569; margin-top: 8px; }
+    .rp-legend .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+
+    .story { font-size: 14px; line-height: 1.6; color: #1f2937; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; }
+    .rp-mv { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr); gap: 16px; }
+    @media (max-width: 900px) { .rp-mv { grid-template-columns: 1fr; } }
+    .mv-table td { padding: 8px 10px; }
+    .mv-table tr.eq td { border-top: 2px solid #cbd5e1; font-weight: 800; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+    .chip { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 14px; border: 1px solid #e2e8f0; background: #fff; color: #334155; white-space: nowrap; }
+    .chip:hover { text-decoration: none; background: #f1f5f9; }
+    .chip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+    .chip .n { font-variant-numeric: tabular-nums; color: #94a3b8; margin-left: 4px; }
+    .chip.on .n { color: #cbd5e1; }
+    .why { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; margin: 1px 3px 1px 0; }
+    .todo { margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: #1f2937; min-width: 300px; }
+    .todo li { margin-bottom: 4px; line-height: 1.45; }
+    .st { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+    .st.active { background: #e0f2f2; color: #065f5e; }
+    .st.handover { background: #fef9c3; color: #854d0e; }
+    .st.legal { background: #ede9fe; color: #5b21b6; }
+    .note { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
+    details.how { margin-top: 12px; }
+    details.how summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--brand-teal); }
+    details.how ul { margin: 8px 0 0; padding-left: 18px; }
+    details.how li { margin-bottom: 5px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% with s=r.summary p=r.summary.portfolio f=r.summary.flows %}
+<div class="page-card">
+    <div class="flex-between" style="flex-wrap:wrap;">
+        <h1 class="page-title">Performance Reports</h1>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <a class="btn btn-secondary btn-sm" href="{% url 'xero_dashboard' %}">&larr; Dashboard</a>
+            {% if can_categorise %}<a class="btn btn-secondary btn-sm" href="{% url 'xero_categories' %}">Types of debtor</a>{% endif %}
+            <a class="btn btn-primary btn-sm" href="?{{ q_export }}" title="Download everything on this page as a spreadsheet">&#8681; Export to Excel</a>
+        </div>
+    </div>
+    <p class="lead">How the debtors book is doing: who looks after which debtors, how much money came in, how old the debt is getting, and which debtors need someone to do something.</p>
+    <p class="page-subtitle showing">
+        Showing <strong>{{ r.period.label }}</strong>{% if r.period.kind != 'custom' %} ({{ r.period.dates }}){% endif %}
+        &middot; {% if clerk_label %}clerk <strong>{{ clerk_label }}</strong>{% elif is_super_admin %}<strong>all clerks</strong>{% else %}<strong>your debtors</strong>{% endif %}
+        &middot; {% if category_label %}type <strong>{{ category_label }}</strong>{% else %}<strong>all types of debtor</strong>{% endif %}
+        {% if clerk_label or category_label %}&middot; <a href="?{{ q_this }}">clear filters</a>{% endif %}
+    </p>
+
+    <div class="howto">
+        <span><b>1</b> Pick a period &mdash; Week, Month, Quarter, Year or your own dates &mdash; and use &larr; &rarr; to go back or forward.</span>
+        <span><b>2</b> To look at one clerk or one type of debtor, choose them from the lists.</span>
+        <span><b>3</b> Everything below changes to match. Hover over a column heading to see what it means.</span>
+    </div>
+
+    <div class="rp-bar">
+        <span class="grp-label">Period</span>
+        <div class="rp-tabs" role="tablist" aria-label="Period">
+            {% for k in kind_links %}<a href="?{{ k.qs }}" class="{% if k.active %}on{% endif %}" role="tab" aria-selected="{% if k.active %}true{% else %}false{% endif %}">{{ k.label }}</a>{% endfor %}
+        </div>
+        <div class="rp-nav">
+            <a class="btn btn-secondary btn-sm" href="?{{ q_prev }}" title="Previous {{ r.period.noun }}">&larr;</a>
+            <span class="lbl">{{ r.period.label }}</span>
+            <a class="btn btn-secondary btn-sm" href="?{{ q_next }}" title="Next {{ r.period.noun }}">&rarr;</a>
+            {% if not at_this %}<a class="btn btn-secondary btn-sm" href="?{{ q_this }}" title="Back to this {{ r.period.noun }}">Current</a>{% endif %}
+        </div>
+        <form method="get" class="rp-filters">
+            {% if r.period.kind == 'custom' %}
+            <input type="hidden" name="period" value="custom">
+            <label for="rp-from">From</label><input id="rp-from" type="date" name="from" class="form-control" value="{{ r.period.start|date:'Y-m-d' }}">
+            <label for="rp-to">To</label><input id="rp-to" type="date" name="to" class="form-control" value="{{ r.period.end|date:'Y-m-d' }}">
+            {% else %}
+            <input type="hidden" name="period" value="{{ r.period.kind }}">
+            <input type="hidden" name="d" value="{{ r.period.start|date:'Y-m-d' }}">
+            {% endif %}
+            {% if is_super_admin %}
+            <label for="rp-clerk">Clerk</label>
+            <select id="rp-clerk" name="clerk" class="form-control" onchange="this.form.submit()">
+                <option value="">All clerks</option>
+                {% for c in clerks %}<option value="{{ c.id }}"{% if scope_clerk == c.id|stringformat:'s' %} selected{% endif %}>{{ c.get_full_name|default:c.email }}</option>{% endfor %}
+                <option value="unallocated"{% if scope_clerk == 'unallocated' %} selected{% endif %}>&mdash; No clerk assigned &mdash;</option>
+            </select>
+            {% endif %}
+            <label for="rp-cat">Type of debtor</label>
+            <select id="rp-cat" name="category" class="form-control" onchange="this.form.submit()">
+                <option value="">All types</option>
+                {% for c in categories %}<option value="{{ c.id }}"{% if scope_category == c.id|stringformat:'s' %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+                <option value="none"{% if scope_category == 'none' %} selected{% endif %}>&mdash; Not given a type yet &mdash;</option>
+            </select>
+            <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+        </form>
+    </div>
+
+    {% if r.is_future %}
+    <div class="alert alert-info">This period has not started yet &mdash; there is nothing to show.</div>
+    {% endif %}
+    {% if not r.history_from or r.history_from > r.period.start %}
+    <p class="note" style="margin:-4px 0 12px;">&#9432; The system started keeping a daily record of balances on <strong>{% if r.history_from %}{{ r.history_from|date:"j M Y" }}{% else %}the next sync{% endif %}</strong>. Payments, write-offs and contact with debtors go back further, but balances before that date show as <em>not recorded</em>.</p>
+    {% endif %}
+
+    <h2 style="font-size:17px; margin:6px 0 10px;">The headlines</h2>
+    <div class="rp-tiles">
+        <div class="rp-tile lead-tile">
+            <div class="k">Total owed to FSA</div>
+            <div class="v">R&nbsp;{{ p.all.total|floatformat:2|intcomma }}</div>
+            <div class="s">by {{ p.all.accounts }} debtor{{ p.all.accounts|pluralize }} &middot; R&nbsp;{{ p.all.overdue|floatformat:0|intcomma }} of it is past its due date</div>
+        </div>
+        <div class="rp-tile">
+            <div class="k">Being chased by the clerks</div>
+            <div class="v">R&nbsp;{{ p.active.total|floatformat:2|intcomma }}</div>
+            <div class="s">{{ p.active.accounts }} debtor{{ p.active.accounts|pluralize }} on the Debtors Action pages</div>
+        </div>
+        <div class="rp-tile">
+            <div class="k">Waiting for a handover decision</div>
+            <div class="v">R&nbsp;{{ p.handover.total|floatformat:2|intcomma }}</div>
+            <div class="s">{{ p.handover.accounts }} debtor{{ p.handover.accounts|pluralize }} on the Handover page</div>
+        </div>
+        <div class="rp-tile">
+            <div class="k">&#9878; With the attorneys</div>
+            <div class="v">R&nbsp;{{ p.legal.total|floatformat:2|intcomma }}</div>
+            <div class="s">{{ p.legal.accounts }} debtor{{ p.legal.accounts|pluralize }} &middot; no longer on the clerks' pages</div>
+        </div>
+        <div class="rp-tile">
+            <div class="k">Money received</div>
+            <div class="v">R&nbsp;{{ f.collected|floatformat:2|intcomma }}</div>
+            <div class="s">{{ f.payments }} payment{{ f.payments|pluralize }} &middot;
+                {% if s.collected_delta > 0 %}<span class="delta up">&#9650; R&nbsp;{{ s.collected_delta_abs|floatformat:0|intcomma }} more</span>{% elif s.collected_delta < 0 %}<span class="delta down">&#9660; R&nbsp;{{ s.collected_delta_abs|floatformat:0|intcomma }} less</span>{% else %}<span class="delta flat">the same</span>{% endif %}
+                than {{ r.prev.label }}</div>
+        </div>
+        <div class="rp-tile">
+            <div class="k">Recovery rate</div>
+            <div class="v">{% if s.recovery is not None %}{{ s.recovery|floatformat:1 }}%{% else %}&mdash;{% endif %}</div>
+            <div class="s">
+                {% if s.recovery is not None %}Of every R100 that could have been collected, <strong>R{{ s.recovery|floatformat:2 }}</strong> came in.{% else %}Can't be worked out: the balance at the end of this period wasn't recorded.{% endif %}
+                {% if s.recovery_delta is not None %}<br>{% if s.recovery_delta > 0 %}<span class="delta up">&#9650; {{ s.recovery_delta_abs|floatformat:1 }} points better</span>{% elif s.recovery_delta < 0 %}<span class="delta down">&#9660; {{ s.recovery_delta_abs|floatformat:1 }} points worse</span>{% else %}<span class="delta flat">the same</span>{% endif %} than {{ r.prev.label }}{% endif %}
+            </div>
+        </div>
+        <div class="rp-tile">
+            <div class="k">Written off</div>
+            <div class="v">R&nbsp;{{ f.written_off|floatformat:2|intcomma }}</div>
+            <div class="s">{{ f.write_off_count }} invoice{{ f.write_off_count|pluralize }} FSA stopped trying to collect</div>
+        </div>
+        <div class="rp-tile">
+            <div class="k">Late debtors contacted</div>
+            <div class="v">{{ s.followed.accounts }} <span style="font-size:14px; color:#64748b;">of {{ s.followed.due_accounts }}</span></div>
+            <div class="s">debtors with money past due got a call, WhatsApp, email or note{% if s.followed.pct is not None %} &middot; <strong>{{ s.followed.pct|floatformat:0 }}%</strong>{% endif %}<br>they owe <strong>R&nbsp;{{ s.followed.value|floatformat:0|intcomma }}</strong> of the R&nbsp;{{ s.followed.due_value|floatformat:0|intcomma }} that is late</div>
+        </div>
+        <div class="rp-tile">
+            <div class="k">Calls, messages &amp; notes</div>
+            <div class="v">{{ f.actions|intcomma }}</div>
+            <div class="s">{{ f.calls }} call{{ f.calls|pluralize }} &middot; {{ f.whatsapps }} WhatsApp{{ f.whatsapps|pluralize }} &middot; {{ f.emails }} email{{ f.emails|pluralize }} &middot; {{ f.comments }} note{{ f.comments|pluralize }}<br>
+                {% if s.actions_delta > 0 %}<span class="delta up">&#9650; {{ s.actions_delta_abs }} more</span>{% elif s.actions_delta < 0 %}<span class="delta down">&#9660; {{ s.actions_delta_abs }} fewer</span>{% else %}<span class="delta flat">the same</span>{% endif %} than {{ r.prev.label }}</div>
+        </div>
+        <a class="rp-tile{% if s.escalations %} alert{% endif %}" href="#escalations" style="text-decoration:none; color:inherit;">
+            <div class="k">&#9888; Need attention now</div>
+            <div class="v">{{ s.escalations }}</div>
+            <div class="s">debtor{{ s.escalations|pluralize }} owing R&nbsp;{{ s.escalation_value|floatformat:2|intcomma }} &middot; see the list &darr;</div>
+        </a>
+    </div>
+
+    <details class="how">
+        <summary>How are these numbers worked out?</summary>
+        <ul class="note">
+            <li><strong>Total owed</strong> is every unpaid invoice of the debtors (not counting written-off invoices or closed debtors), as it stands right now.</li>
+            <li><strong>Being chased</strong> means the debtor is on the Debtors Action page. <strong>Waiting for a handover decision</strong> means it is on the Handover page. <strong>With the attorneys</strong> means a legal matter was approved &mdash; those debtors are taken off the clerks' pages and watched from the Lawyers page.</li>
+            <li><strong>Money received</strong> is every payment made during the period, counted against the clerk the debtor belonged to when it was paid. <strong>Clerk's own collections</strong> is the part that counts as the clerk's work: they had contacted the debtor and it had not been handed over.</li>
+            <li><strong>Recovery rate</strong> = money received &divide; (money received + written off + still owed at the end of the period).</li>
+            <li><strong>Contacted</strong> means someone logged a call, WhatsApp, email or note on the debtor during the period.</li>
+            <li>A debtor's <strong>type</strong> is the one given to it by hand, otherwise worked out from a keyword in its name or project code (e.g. "abattoir"), otherwise "Not given a type yet".</li>
+        </ul>
+    </details>
+</div>
+
+{# ---- 1. per clerk ---- #}
+<div class="page-card rp-section" id="clerks">
+    <h2 class="mt-0"><span class="qn">1</span> Who looks after what, and how much came in?</h2>
+    <div class="what">One row per debtor clerk. <strong>Total owed</strong> is everything their debtors owe FSA today, split into what they are still <strong>chasing</strong>, what is <strong>waiting for a handover decision</strong> and what is <strong>with the attorneys</strong>. <strong>Money received</strong> is what their debtors paid during {{ r.period.label }}.</div>
+    {% if r.clerk_rows %}
+    <div class="rp-scroll">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Clerk</th>
+                <th class="num" title="How many debtors are allocated to this clerk">Debtors</th>
+                <th class="num" title="Everything those debtors owe FSA today">Total owed</th>
+                <th class="num grp" title="On the Debtors Action page - the clerk's working list">Being chased</th>
+                <th class="num" title="On the Handover page, waiting for a Super Admin to decide">Awaiting handover</th>
+                <th class="num" title="Handed over to the attorneys - off the clerk's page">With attorneys</th>
+                <th class="num grp" title="Payments received from this clerk's debtors during the period">Money received</th>
+                <th class="num" title="Money received in {{ r.prev.label }}, to compare">Previous {{ r.period.noun }}</th>
+                <th class="num" title="Money that counts as the clerk's own work: they had contacted the debtor and it was not yet handed over">Clerk's own collections</th>
+                <th class="num" title="Invoices FSA stopped trying to collect during the period">Written off</th>
+                <th class="num" title="Of everything that could have been collected, the share that came in">Recovery rate</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in r.clerk_rows %}
+            <tr>
+                <td class="nm">{{ c.name }}</td>
+                <td class="num">{{ c.portfolio.all.accounts }}</td>
+                <td class="num"><strong>R&nbsp;{{ c.portfolio.all.total|floatformat:2|intcomma }}</strong></td>
+                <td class="num grp">R&nbsp;{{ c.portfolio.active.total|floatformat:2|intcomma }}<span class="sm">{{ c.portfolio.active.accounts }} debtor{{ c.portfolio.active.accounts|pluralize }}{% if c.active_90_pct %} &middot; {{ c.active_90_pct|floatformat:0 }}% over 90 days late{% endif %}</span></td>
+                <td class="num">{% if c.portfolio.handover.accounts %}R&nbsp;{{ c.portfolio.handover.total|floatformat:2|intcomma }}<span class="sm">{{ c.portfolio.handover.accounts }} debtor{{ c.portfolio.handover.accounts|pluralize }}</span>{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num">{% if c.portfolio.legal.accounts %}R&nbsp;{{ c.portfolio.legal.total|floatformat:2|intcomma }}<span class="sm">{{ c.portfolio.legal.accounts }} debtor{{ c.portfolio.legal.accounts|pluralize }}</span>{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num grp"><strong>R&nbsp;{{ c.flows.collected|floatformat:2|intcomma }}</strong>{% if c.flows.collected_legal %}<span class="sm">incl. R&nbsp;{{ c.flows.collected_legal|floatformat:0|intcomma }} via the attorneys</span>{% endif %}</td>
+                <td class="num">R&nbsp;{{ c.prev_collected|floatformat:2|intcomma }}</td>
+                <td class="num">R&nbsp;{{ c.flows.credited|floatformat:2|intcomma }}</td>
+                <td class="num">{% if c.flows.written_off %}R&nbsp;{{ c.flows.written_off|floatformat:2|intcomma }}{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num"><strong>{% if c.recovery is not None %}{{ c.recovery|floatformat:1 }}%{% else %}<span class="dash">&mdash;</span>{% endif %}</strong></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <h3>Are they keeping in touch with late debtors?</h3>
+    <div class="what"><strong>Late debtors</strong> are the ones being chased that owe money past its due date. <strong>Contacted</strong> means someone logged a call, WhatsApp, email or note on them during the period. The call, WhatsApp, email and note counts are what that clerk logged themselves.</div>
+    <div class="rp-scroll">
+    <table class="data-table" id="clerk-activity">
+        <thead>
+            <tr>
+                <th>Clerk</th>
+                <th class="num" title="Debtors being chased that have money past its due date">Late debtors</th>
+                <th class="num" title="How many of those late debtors were contacted during the period, and what they owe">Contacted</th>
+                <th class="num grp">Calls</th><th class="num">WhatsApps</th><th class="num">Emails</th><th class="num" title="Notes left on the debtor's comment thread">Notes</th>
+                <th class="num">Total</th>
+                <th class="num grp" title="Debtors on the attention list at the bottom of this page">Need attention</th>{% if is_super_admin and not scope_clerk %}<th></th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in r.clerk_rows %}
+            <tr>
+                <td class="nm">{{ c.name }}</td>
+                <td class="num">{{ c.followed.due_accounts }}<span class="sm">owing R&nbsp;{{ c.followed.due_value|floatformat:0|intcomma }}</span></td>
+                <td class="num"><strong>{{ c.followed.accounts }}</strong>{% if c.followed.pct is not None %}<span class="sm">{{ c.followed.pct|floatformat:0 }}% of late debtors</span>{% endif %}{% if c.followed.accounts %}<span class="sm">owing R&nbsp;{{ c.followed.value|floatformat:0|intcomma }}</span>{% endif %}</td>
+                <td class="num grp">{{ c.flows.calls }}</td>
+                <td class="num">{{ c.flows.whatsapps }}</td>
+                <td class="num">{{ c.flows.emails }}</td>
+                <td class="num">{{ c.flows.comments }}</td>
+                <td class="num"><strong>{{ c.flows.actions }}</strong></td>
+                <td class="num grp">{% if c.escalations %}<strong style="color:#9a3412;">{{ c.escalations }}</strong><span class="sm">owing R&nbsp;{{ c.escalation_value|floatformat:0|intcomma }}</span>{% else %}0{% endif %}</td>
+                {% if is_super_admin and not scope_clerk %}<td class="num" style="white-space:nowrap;"><a href="?{{ q_current }}&amp;clerk={{ c.key }}">Show only this clerk &rarr;</a></td>{% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted">Nothing to show for this selection.</p>
+    {% endif %}
+</div>
+
+{# ---- 2. per category ---- #}
+<div class="page-card rp-section" id="categories">
+    <h2 class="mt-0"><span class="qn">2</span> How is each type of debtor doing?</h2>
+    <div class="what">The same figures, grouped by the kind of client &mdash; abattoirs, corporate stores, individual stores, training and so on &mdash; instead of by clerk. Debtors nobody has given a type yet are under <em>Uncategorised</em>{% if can_categorise %} &mdash; <a href="{% url 'xero_categories' %}?show=none">give them a type</a>{% endif %}.</div>
+    <div class="rp-scroll">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Type of debtor</th>
+                <th class="num">Debtors</th><th class="num" title="Everything these debtors owe FSA today">Total owed</th>
+                <th class="num grp" title="On the Debtors Action pages">Being chased</th><th class="num" title="On the Handover page">Awaiting handover</th><th class="num" title="Handed over to the attorneys">With attorneys</th>
+                <th class="num" title="Share of what is being chased or awaiting handover that is more than 90 days late">Over 90 days late</th>
+                <th class="num grp">Money received</th><th class="num" title="Money received in {{ r.prev.label }}, to compare">Previous {{ r.period.noun }}</th><th class="num">Written off</th><th class="num" title="Of everything that could have been collected, the share that came in">Recovery rate</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in r.category_rows %}
+            <tr>
+                <td class="nm">{{ c.name }}</td>
+                <td class="num">{{ c.portfolio.all.accounts }}</td>
+                <td class="num"><strong>R&nbsp;{{ c.portfolio.all.total|floatformat:2|intcomma }}</strong></td>
+                <td class="num grp">R&nbsp;{{ c.portfolio.active.total|floatformat:2|intcomma }}<span class="sm">{{ c.portfolio.active.accounts }} debtor{{ c.portfolio.active.accounts|pluralize }}</span></td>
+                <td class="num">{% if c.portfolio.handover.accounts %}R&nbsp;{{ c.portfolio.handover.total|floatformat:2|intcomma }}<span class="sm">{{ c.portfolio.handover.accounts }} debtor{{ c.portfolio.handover.accounts|pluralize }}</span>{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num">{% if c.portfolio.legal.accounts %}R&nbsp;{{ c.portfolio.legal.total|floatformat:2|intcomma }}<span class="sm">{{ c.portfolio.legal.accounts }} debtor{{ c.portfolio.legal.accounts|pluralize }}</span>{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num">{% if c.aged_90_pct is not None %}{{ c.aged_90_pct|floatformat:0 }}%{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num grp"><strong>R&nbsp;{{ c.flows.collected|floatformat:2|intcomma }}</strong></td>
+                <td class="num">R&nbsp;{{ c.prev_collected|floatformat:2|intcomma }}</td>
+                <td class="num">{% if c.flows.written_off %}R&nbsp;{{ c.flows.written_off|floatformat:2|intcomma }}{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num"><strong>{% if c.recovery is not None %}{{ c.recovery|floatformat:1 }}%{% else %}<span class="dash">&mdash;</span>{% endif %}</strong></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <h3>Are those debtors being contacted?</h3>
+    <div class="rp-scroll">
+    <table class="data-table" id="category-activity">
+        <thead>
+            <tr>
+                <th>Type of debtor</th>
+                <th class="num" title="Debtors being chased that have money past its due date">Late debtors</th>
+                <th class="num" title="How many of those late debtors were contacted during the period, and what they owe">Contacted</th>
+                <th class="num grp" title="Every call, WhatsApp, email and note logged on these debtors{% if clerk_label %} by {{ clerk_label }}{% endif %}">Calls, messages &amp; notes</th>
+                <th class="num grp" title="Debtors on the attention list at the bottom of this page">Need attention</th>{% if not scope_category %}<th></th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in r.category_rows %}
+            <tr>
+                <td class="nm">{{ c.name }}</td>
+                <td class="num">{{ c.followed.due_accounts }}<span class="sm">owing R&nbsp;{{ c.followed.due_value|floatformat:0|intcomma }}</span></td>
+                <td class="num"><strong>{{ c.followed.accounts }}</strong>{% if c.followed.pct is not None %}<span class="sm">{{ c.followed.pct|floatformat:0 }}% of late debtors</span>{% endif %}{% if c.followed.accounts %}<span class="sm">owing R&nbsp;{{ c.followed.value|floatformat:0|intcomma }}</span>{% endif %}</td>
+                <td class="num grp">{{ c.flows.actions }}</td>
+                <td class="num grp">{% if c.escalations %}<strong style="color:#9a3412;">{{ c.escalations }}</strong><span class="sm">owing R&nbsp;{{ c.escalation_value|floatformat:0|intcomma }}</span>{% else %}0{% endif %}</td>
+                {% if not scope_category %}<td class="num" style="white-space:nowrap;"><a href="?{{ q_current }}&amp;category={{ c.key }}">Show only this type &rarr;</a></td>{% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+{# ---- 3. ageing and movement ---- #}
+<div class="page-card rp-section" id="ageing">
+    <h2 class="mt-0"><span class="qn">3</span> Is the debt getting older?</h2>
+
+    <h3 style="margin-top:4px;">How late the money is, right now</h3>
+    <div class="what">How long past its due date each rand is. The further right the money sits, the harder it is to collect.</div>
+    <div class="rp-scroll">
+    <table class="data-table">
+        <thead><tr><th>Where it is</th>{% for b in r.bucket_plain %}<th class="num">{{ b }}</th>{% endfor %}<th class="num">Total</th></tr></thead>
+        <tbody>
+            {% for a in r.ageing_rows %}
+            <tr><td class="nm"><span class="st {{ a.status }}">{{ a.label }}</span></td>
+                {% for v in a.buckets %}<td class="num">{% if v %}R&nbsp;{{ v|floatformat:2|intcomma }}{% else %}<span class="dash">&mdash;</span>{% endif %}</td>{% endfor %}
+                <td class="num"><strong>R&nbsp;{{ a.total|floatformat:2|intcomma }}</strong></td></tr>
+            {% endfor %}
+            <tr class="tot"><td>Total</td>{% for v in r.ageing_total.buckets %}<td class="num">R&nbsp;{{ v|floatformat:2|intcomma }}</td>{% endfor %}<td class="num">R&nbsp;{{ r.ageing_total.total|floatformat:2|intcomma }}</td></tr>
+        </tbody>
+    </table>
+    </div>
+
+    <h3>How the amount owed changed during {{ r.period.label }}</h3>
+    {% with m=r.movement %}
+    {% if m and m.opening is not None %}
+    <div class="story">
+        At the start FSA was owed <strong>R&nbsp;{{ m.opening|floatformat:2|intcomma }}</strong>{% if m.opening_partial %} (the first day on record, {{ m.opening_day|date:"j M" }}){% endif %}.
+        During the period <strong>R&nbsp;{{ m.collected|floatformat:2|intcomma }}</strong> was received and <strong>R&nbsp;{{ m.written_off|floatformat:2|intcomma }}</strong> written off.
+        New invoices and other changes {% if m.new < 0 %}took off another <strong>R&nbsp;{{ m.new_abs|floatformat:2|intcomma }}</strong>{% else %}added <strong>R&nbsp;{{ m.new|floatformat:2|intcomma }}</strong>{% endif %},
+        so FSA {% if m.closing_day == r.today %}is now{% else %}was{% endif %} owed <strong>R&nbsp;{{ m.closing|floatformat:2|intcomma }}</strong>{% if m.closing_day != r.today %} at the end{% endif %}.
+    </div>
+    {% elif m %}
+    <div class="story">FSA {% if m.closing_day == r.today %}is now{% else %}was{% endif %} owed <strong>R&nbsp;{{ m.closing|floatformat:2|intcomma }}</strong>. The amount owed at the start of this period wasn't recorded, so the change can't be shown.</div>
+    {% endif %}
+    <div class="rp-mv">
+        <div>
+            {% if m %}
+            <table class="data-table mv-table">
+                <tbody>
+                    <tr><td>Owed at the start{% if m.opening_day %} <span class="sm">{% if m.opening_partial %}first day on record, {{ m.opening_day|date:"j M" }}{% else %}end of {{ m.opening_day|date:"j M Y" }}{% endif %}</span>{% endif %}</td>
+                        <td class="num">{% if m.opening is not None %}R&nbsp;{{ m.opening|floatformat:2|intcomma }}{% else %}<em class="muted">not recorded</em>{% endif %}</td></tr>
+                    <tr><td>+ New invoices &amp; other changes <span class="sm">invoices raised, credit notes and adjustments</span></td>
+                        <td class="num">{% if m.new is not None %}{% if m.new < 0 %}&minus;R&nbsp;{{ m.new_abs|floatformat:2|intcomma }}{% else %}R&nbsp;{{ m.new|floatformat:2|intcomma }}{% endif %}{% else %}<span class="dash">&mdash;</span>{% endif %}</td></tr>
+                    <tr><td>&minus; Money received</td><td class="num">R&nbsp;{{ m.collected|floatformat:2|intcomma }}</td></tr>
+                    <tr><td>&minus; Written off</td><td class="num">R&nbsp;{{ m.written_off|floatformat:2|intcomma }}</td></tr>
+                    <tr class="eq"><td>Owed at the end <span class="sm">{% if m.closing_day == r.today %}as it stands now{% else %}end of {{ m.closing_day|date:"j M Y" }}{% endif %}</span></td>
+                        <td class="num">R&nbsp;{{ m.closing|floatformat:2|intcomma }}</td></tr>
+                </tbody>
+            </table>
+            {% if m.statuses %}
+            <table class="data-table mv-table" style="margin-top:12px;">
+                <thead><tr><th>Where it is</th><th class="num">At the start</th><th class="num">At the end</th><th class="num">Change</th></tr></thead>
+                <tbody>{% for x in m.statuses %}<tr><td>{{ x.label }}</td><td class="num">R&nbsp;{{ x.opening|floatformat:0|intcomma }}</td><td class="num">R&nbsp;{{ x.closing|floatformat:0|intcomma }}</td><td class="num">{% if x.change > 0 %}+R&nbsp;{{ x.change|floatformat:0|intcomma }}{% elif x.change < 0 %}&minus;R&nbsp;{{ x.change_abs|floatformat:0|intcomma }}{% else %}R&nbsp;0{% endif %}</td></tr>{% endfor %}</tbody>
+            </table>
+            {% endif %}
+            {% else %}
+            <p class="muted">The amount owed at the end of this period wasn't recorded.</p>
+            {% endif %}
+        </div>
+        <div>
+            {% if m and m.buckets %}
+            <table class="data-table mv-table">
+                <thead><tr><th>How late</th><th class="num">At the start</th><th class="num">At the end</th><th class="num">Change</th></tr></thead>
+                <tbody>
+                    {% for b in m.buckets %}
+                    <tr><td>{{ b.label }}</td><td class="num">R&nbsp;{{ b.opening|floatformat:0|intcomma }}</td><td class="num">R&nbsp;{{ b.closing|floatformat:0|intcomma }}</td>
+                        <td class="num">{% if b.change > 0 %}<span class="delta down">&#9650;</span> +R&nbsp;{{ b.change|floatformat:0|intcomma }}{% elif b.change < 0 %}<span class="delta up">&#9660;</span> &minus;R&nbsp;{{ b.change_abs|floatformat:0|intcomma }}{% else %}R&nbsp;0{% endif %}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p class="note" style="margin:6px 0 0;"><span class="delta down">&#9650; Red</span> in the later rows means debt is getting older faster than it is being paid.</p>
+            {% else %}
+            <p class="muted">Needs the amount owed at both the start and the end of the period.</p>
+            {% endif %}
+            <h3>Moved on during the period</h3>
+            <table class="data-table mv-table">
+                <tbody>
+                    <tr><td>Debtors newly marked for handover</td><td class="num">{{ r.handover_new }}</td></tr>
+                    <tr><td>Debtors sent to the attorneys</td><td class="num">{{ r.legal_moves.approved|length }}{% if r.legal_moves.approved %}<span class="sm">{% for x in r.legal_moves.approved|slice:":4" %}{{ x.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if r.legal_moves.approved|length > 4 %} &hellip;{% endif %}</span>{% endif %}</td></tr>
+                    <tr><td>Debtors brought back from the attorneys</td><td class="num">{{ r.legal_moves.closed|length }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endwith %}
+</div>
+
+{# ---- 4. trend ---- #}
+<div class="page-card rp-section" id="trend">
+    <h2 class="mt-0"><span class="qn">4</span> How does this compare with earlier {{ r.period.noun }}s?</h2>
+    <div class="what">The last {{ r.trend|length }} {{ r.period.noun }}s side by side, the newest on the right of the charts and at the top of the table. Hover over a bar to see its value.</div>
+    <div class="rp-charts">
+        <div class="rp-chart">
+            <h4>Money received each {{ r.period.noun }}</h4>
+            <div class="cap">payments from debtors</div>
+            {% include "xero/_report_columns.html" with chart=r.collected_chart colour="#12746e" aria="Money received each period" empty="received" %}
+        </div>
+        <div class="rp-chart">
+            <h4>Amount owed at the end of each {{ r.period.noun }}</h4>
+            <div class="cap">coloured by how late it is &mdash; darker is older</div>
+            {% include "xero/_report_stacked.html" with chart=r.outstanding_chart %}
+        </div>
+    </div>
+    <div class="rp-scroll" style="margin-top:14px;">
+    <table class="data-table">
+        <thead><tr><th>{{ r.period.noun|capfirst }}</th><th class="num">Money received</th><th class="num">Written off</th><th class="num">Owed at the end</th><th class="num" title="Of everything that could have been collected, the share that came in">Recovery rate</th><th class="num">Calls, messages &amp; notes</th><th class="num" title="Debtors with at least one call, WhatsApp, email or note">Debtors contacted</th></tr></thead>
+        <tbody>
+            {% for t in r.trend reversed %}
+            <tr{% if t.current %} style="background:#f0fdfa;"{% endif %}>
+                <td class="nm">{{ t.label }}{% if t.current %} <span class="sm">selected</span>{% endif %}</td>
+                <td class="num">R&nbsp;{{ t.flows.collected|floatformat:2|intcomma }}</td>
+                <td class="num">{% if t.flows.written_off %}R&nbsp;{{ t.flows.written_off|floatformat:2|intcomma }}{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num">{% if t.closing is not None %}R&nbsp;{{ t.closing|floatformat:2|intcomma }}{% else %}<em class="muted">not recorded</em>{% endif %}</td>
+                <td class="num">{% if t.recovery is not None %}{{ t.recovery|floatformat:1 }}%{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num">{{ t.flows.actions }}</td>
+                <td class="num">{{ t.followed_accounts }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+{# ---- 5. escalations ---- #}
+<div class="page-card rp-section" id="escalations">
+    <h2 class="mt-0"><span class="qn">5</span> &#9888; Which debtors need someone to act?</h2>
+    <div class="what">Debtors where something needs doing today, biggest amount first. Each one says <strong>why</strong> it is here and <strong>what to do next</strong>. Click a reason to see only those debtors.</div>
+    {% if r.escalation_reasons %}
+    <div class="chips">
+        <a class="chip{% if not r.reason_filter %} on{% endif %}" href="?{{ q_current }}#escalations">All<span class="n">{{ s.escalations }}</span></a>
+        {% for x in r.escalation_reasons %}
+        <a class="chip{% if r.reason_filter == x.key %} on{% endif %}" href="?{{ q_current }}&amp;reason={{ x.key }}#escalations" title="Owing R {{ x.value|floatformat:2|intcomma }}">{{ x.label }}<span class="n">{{ x.count }}</span></a>
+        {% endfor %}
+    </div>
+    <div class="rp-scroll">
+    <table class="data-table">
+        <thead><tr><th>Debtor</th><th>Clerk</th><th>Type</th><th>Where it is</th><th class="num">Owed</th><th class="num" title="The oldest invoice, in days past its due date">Most days late</th><th title="The last call, WhatsApp, email or note">Last contact</th><th>Why it's here &rarr; what to do next</th></tr></thead>
+        <tbody>
+            {% for e in r.escalations|slice:":200" %}
+            <tr>
+                <td class="nm">{{ e.name }}
+                    <span class="sm">{% if e.status == 'legal' and e.matter_id %}<a href="{% url 'xero_legal_matter' e.matter_id %}">Open the matter &rarr;</a>{% elif e.status == 'handover' %}<a href="{% url 'xero_handover' %}?q={{ e.name|urlencode }}">Open on the Handover page &rarr;</a>{% else %}<a href="{% url 'xero_aging_report' %}?q={{ e.name|urlencode }}">Open on the Debtors Action page &rarr;</a>{% endif %}</span></td>
+                <td style="white-space:nowrap;">{{ e.admin_name }}</td>
+                <td>{{ e.category_name }}</td>
+                <td><span class="st {{ e.status }}">{{ e.status_label }}</span></td>
+                <td class="num"><strong>R&nbsp;{{ e.total|floatformat:2|intcomma }}</strong>{% if e.overdue and e.overdue != e.total %}<span class="sm">R&nbsp;{{ e.overdue|floatformat:0|intcomma }} late</span>{% endif %}</td>
+                <td class="num">{{ e.max_dpd }} day{{ e.max_dpd|pluralize }}</td>
+                <td>{% if e.last_action %}{{ e.last_action|date:"j M Y" }} <span class="sm">{{ e.last_action|timesince }} ago</span>{% else %}<span class="muted">never</span>{% endif %}</td>
+                <td><ul class="todo">{% for why, step in e.steps %}<li><span class="why">{{ why }}</span> &rarr; {{ step }}</li>{% endfor %}</ul>{% if e.days_idle is not None and e.status == 'legal' %}<span class="sm">nothing has happened for {{ e.days_idle }} days</span>{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8" class="muted">No debtors for this reason.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% if r.escalations|length > 200 %}<p class="note">Showing the 200 largest of {{ r.escalations|length }} &mdash; Export to Excel for the full list.</p>{% endif %}
+    {% else %}
+    <p class="muted">&#9989; Nothing needs attention in this selection.</p>
+    {% endif %}
+</div>
+
+{# ---- 6. with the attorneys ---- #}
+<div class="page-card rp-section" id="legal">
+    <h2 class="mt-0"><span class="qn">6</span> &#9878; What is with the attorneys?</h2>
+    <div class="what">Debtors formally handed over to the attorneys for collection. They no longer appear on the clerks' pages, so this is where to keep an eye on them. <strong>Last activity</strong> turns red when nothing has happened for {{ legal_idle_days }} days or more.</div>
+    {% if r.legal_rows %}
+    <div class="rp-scroll">
+    <table class="data-table">
+        <thead><tr><th>Debtor</th><th>Clerk</th><th>Type</th><th class="num">Owed</th><th class="num">Invoices</th><th>With the attorneys since</th><th class="num" title="The last step, comment or change on the matter">Last activity</th><th class="num">Received this {{ r.period.noun }}</th><th></th></tr></thead>
+        <tbody>
+            {% for x in r.legal_rows %}
+            <tr>
+                <td class="nm">{{ x.name }}</td>
+                <td>{{ x.admin_name }}</td>
+                <td>{{ x.category_name }}</td>
+                <td class="num"><strong>R&nbsp;{{ x.total|floatformat:2|intcomma }}</strong></td>
+                <td class="num">{{ x.invoices }}</td>
+                <td>{% if x.approved_at %}{{ x.approved_at|date:"j M Y" }} <span class="sm">{{ x.days_with_attorneys }} day{{ x.days_with_attorneys|pluralize }} ago</span>{% else %}&mdash;{% endif %}</td>
+                <td class="num">{% if x.days_idle is not None %}{% if x.days_idle >= legal_idle_days %}<strong style="color:#b91c1c;">{{ x.days_idle }} days ago</strong>{% else %}{{ x.days_idle }} day{{ x.days_idle|pluralize }} ago{% endif %}{% else %}&mdash;{% endif %}</td>
+                <td class="num">{% if x.recovered %}R&nbsp;{{ x.recovered|floatformat:2|intcomma }}{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
+                <td class="num" style="white-space:nowrap;">{% if x.matter_id %}<a href="{% url 'xero_legal_matter' x.matter_id %}">Open matter &rarr;</a>{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted">No debtors with the attorneys in this selection.</p>
+    {% endif %}
+</div>
+{% endwith %}
+{% endblock %}

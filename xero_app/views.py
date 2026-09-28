@@ -33,7 +33,7 @@ from .models import (XeroConnection, OpenInvoiceSnapshot, SyncRun, SyncSchedule,
                      LegalMatter, LegalStep, LegalStepComment, LegalStepCommentAttachment,
                      RecoveredInvoice, LawyerReportConfig, ReportRecipient, DebtorNotice,
                      HandoverReturn,
-                     DebtorComment,
+                     DebtorComment, DebtorCategory, DebtorClassification,
                      DEFAULT_WA_TEMPLATE, DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY)
 from . import legal_workflow
 from .xero_client import (fetch_invoice_history, fetch_contact, clean_contact,
@@ -43,6 +43,8 @@ from . import outreach
 from . import reports
 from . import notifications
 from . import wati
+from . import portfolio
+from . import performance
 from accounts.audit import _log as _audit_log
 from accounts.decorators import super_admin_required, role_required
 from accounts.models import AuditLog, Role
@@ -59,6 +61,18 @@ def _assignable_admins():
 def _can_allocate(user):
     # Allocating debtors is a management action — Super Admins only.
     return user.is_super_admin
+
+
+def _can_categorise(user):
+    """Placing a debtor in a category, and managing the category list, decides
+    how the book is reported on — a management action, like allocating."""
+    return user.is_super_admin
+
+
+def _can_view_reports(user):
+    """Performance reports: Super Admins see every clerk; an administrator sees
+    the same report scoped to their own portfolio."""
+    return user.is_super_admin or user.is_administrator
 
 
 def _can_manage(user):
@@ -628,12 +642,9 @@ DC_REPLIES_SHOWN = 2
 def _handover_threshold_map(tenant_id):
     """contact_id -> the days-past-due threshold at which that debtor's invoices
     auto-land on the Handover page, or None for 'never auto-hand over'. Debtors
-    with no HandoverSetting row aren't in the map (they use HANDOVER_DAYS)."""
-    out = {}
-    for hs in HandoverSetting.objects.filter(tenant_id=tenant_id).values(
-            "contact_id", "auto_handover", "handover_days"):
-        out[hs["contact_id"]] = (hs["handover_days"] if hs["auto_handover"] else None)
-    return out
+    with no HandoverSetting row aren't in the map (they use HANDOVER_DAYS).
+    Shared with the reports, which must classify invoices the same way."""
+    return portfolio.handover_threshold_map(tenant_id)
 
 
 def _auto_handover_threshold(contact_id, threshold_map):
@@ -652,11 +663,7 @@ def _is_auto_handover(contact_id, days_past_due, threshold_map):
 def _cadence_shift_map(tenant_id):
     """contact_id -> days to push the follow-up cadence later (0 if no override).
     Only debtors with a non-zero shift are in the map."""
-    return {
-        hs["contact_id"]: hs["cadence_shift_days"]
-        for hs in HandoverSetting.objects.filter(tenant_id=tenant_id)
-        .exclude(cadence_shift_days=0).values("contact_id", "cadence_shift_days")
-    }
+    return portfolio.cadence_shift_map(tenant_id)
 
 
 def _effective_dpd(days_past_due, contact_id, shift_map):
@@ -672,17 +679,7 @@ def _channel_due_map(tenant_id):
     per-debtor override of how many days past due each follow-up channel becomes
     due (None = the default cadence). Only debtors with at least one override
     are in the map."""
-    out = {}
-    for hs in (HandoverSetting.objects.filter(tenant_id=tenant_id)
-               .exclude(call_due_days__isnull=True,
-                        whatsapp_due_days__isnull=True,
-                        email_due_days__isnull=True)
-               .values("contact_id", "call_due_days", "whatsapp_due_days",
-                       "email_due_days")):
-        out[hs["contact_id"]] = {"call": hs["call_due_days"],
-                                 "whatsapp": hs["whatsapp_due_days"],
-                                 "email": hs["email_due_days"]}
-    return out
+    return portfolio.channel_due_map(tenant_id)
 
 
 def _wa_format_phone(num):
@@ -854,19 +851,7 @@ def _contact_log_sets(tenant_id, since):
     is limited to rows on/after `since` (the suppress window); 'ever' is all-time.
     Drives the per-channel Call / WhatsApp / Email follow-up prompts and the
     'missed' markers (in-window with no attempt of that channel ever logged)."""
-    recent = {c: set() for c in CONTACT_CHANNELS}
-    ever = {c: set() for c in CONTACT_CHANNELS}
-    for invoice_id, action_type, called_at in (
-        CallLog.objects.filter(tenant_id=tenant_id)
-        .values_list("invoice_id", "action_type", "called_at")
-    ):
-        # Unknown/legacy values fall back to the Call channel.
-        if action_type not in ever:
-            action_type = CallLog.ACTION_CALL
-        ever[action_type].add(invoice_id)
-        if called_at and called_at >= since:
-            recent[action_type].add(invoice_id)
-    return recent, ever
+    return portfolio.contact_log_sets(tenant_id, since)
 
 
 def _aging_context(request, tenant_id, closed_only, write_off_only=False, handover_only=False):
@@ -970,6 +955,32 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
     selected_projects = sorted(requested_projects & all_project_codes)
     selected_projects_set = set(selected_projects)
 
+    # Each debtor's category (set by hand, else matched on its name / project
+    # codes), for the chip on the row and the category filter. "none" selects
+    # the debtors nobody has categorised yet.
+    resolver = portfolio.CategoryResolver(tenant_id)
+    names_by_cid, codes_by_cid = {}, defaultdict(set)
+    for s in snapshots:
+        key = s["contact_id"] or s["contact_name"] or "Unknown"
+        names_by_cid.setdefault(key, s["contact_name"] or "Unknown")
+        codes_by_cid[key].update(c.strip() for c in (s["project_code"] or "").split(", ") if c.strip())
+    category_of = {key: resolver.resolve(key, name, sorted(codes_by_cid[key]))
+                   for key, name in names_by_cid.items()}
+    category_param = (request.GET.get("category") or "").strip()
+    if category_param == "none" or (category_param.isdigit()
+                                    and int(category_param) in resolver.by_id):
+        selected_category = category_param
+    else:
+        selected_category = ""
+
+    def _category_excluded(key):
+        if not selected_category:
+            return False
+        cat_id = category_of.get(key, (None,))[0]
+        if selected_category == "none":
+            return cat_id is not None
+        return cat_id != int(selected_category)
+
     # Companies actively with the lawyers leave the Handover page entirely —
     # their matters are worked from the Lawyers page until closed / brought back.
     # (Pending ones stay listed so admins can see they await approval.)
@@ -989,9 +1000,9 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
     #
     # The test is whether the client would actually SHOW on the Handover page, so
     # it repeats that page's own exclusions. A client with an active legal matter
-    # is worked from the Lawyers page and never reaches Handover — removing it
-    # here as well would strand any invoice too fresh to be part of the matter,
-    # with no page left to chase it from.
+    # never reaches Handover; it leaves this page as a whole (below) because the
+    # attorneys own it now, and every one of its open invoices - the fresh ones
+    # included - is listed on its matter on the Lawyers page.
     handed_over_cids = set()
     if not (handover_only or write_off_only or closed_only):
         for s in snapshots:
@@ -1042,8 +1053,11 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
                 continue
         else:
             # Open debtors page: drop written-off, closed and handed-over
-            # invoices, and drop the whole client once it shows on Handover.
+            # invoices, drop the whole client once it shows on Handover, and
+            # drop it once it is formally with the attorneys - it is no longer
+            # the clerk's active workload, and is monitored from the Lawyers page.
             if (is_written_off or is_on_handover or cid in closed_ids
+                    or cid in active_legal_cids
                     or (cid in handed_over_cids and not was_returned)):
                 continue
 
@@ -1085,6 +1099,8 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
             inv_codes = {c.strip() for c in (s["project_code"] or "").split(", ") if c.strip()}
             if not (inv_codes & selected_projects_set):
                 continue
+        if _category_excluded(cid):
+            continue
 
         # Summary tiles reflect the full (in-scope) picture - they act as filter nav.
         bucket_totals[b] += ad
@@ -1098,7 +1114,11 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
 
         if cid not in debtors:
             admin = alloc_map.get(cid)
+            cat_id, cat_name, cat_source = category_of.get(cid, (None, portfolio.UNCATEGORISED, ""))
             debtors[cid] = {
+                "category_id": cat_id,
+                "category_name": cat_name,
+                "category_source": cat_source,
                 "cid": cid,
                 "contact_id": s["contact_id"] or "",
                 "name": s["contact_name"] or "Unknown",
@@ -1181,6 +1201,37 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         for label in bucket_labels:
             column_totals[label] += d["buckets"][label]
 
+    # Clients formally with the attorneys are no longer listed on this page. Say
+    # how many and what they owe, within the same book the page is showing, so
+    # the clerk's figures still reconcile and a search for one of them points at
+    # its matter instead of coming back empty.
+    legal_accounts = []
+    if active_legal_cids and not (handover_only or write_off_only or closed_only):
+        legal_owed = defaultdict(Decimal)
+        for s in snapshots:
+            key = s["contact_id"] or s["contact_name"] or "Unknown"
+            if (key not in active_legal_cids or key in closed_ids
+                    or s["invoice_id"] in written_off_ids):
+                continue
+            if restrict_to_me and key not in my_alloc_ids:
+                continue
+            if unallocated_only and key in alloc_map:
+                continue
+            if _category_excluded(key):
+                continue
+            legal_owed[key] += s["amount_due"] or Decimal(0)
+        matter_ids = {}
+        for m in LegalMatter.objects.filter(tenant_id=tenant_id, status=LegalMatter.ACTIVE):
+            for key in (m.contact_id, m.contact_name):
+                if key:
+                    matter_ids.setdefault(key, m.id)
+        legal_accounts = sorted(
+            ({"cid": key, "name": names_by_cid.get(key, key), "total": owed,
+              "matter_id": matter_ids.get(key)} for key, owed in legal_owed.items()),
+            key=lambda a: a["total"], reverse=True)
+    legal_matches = [a for a in legal_accounts
+                     if search_lower and search_lower in a["name"].lower()]
+
     bucket_summary = [
         {
             "label": label,
@@ -1219,6 +1270,13 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         "project_query_bare": urlencode([("project", p) for p in selected_projects]),
         # For the "Clear projects" link: current query string minus any project params.
         "qs_no_project": urlencode([(k, v) for k, vs in request.GET.lists() if k != "project" for v in vs]),
+        "categories": resolver.active,
+        "selected_category": selected_category,
+        "category_query": ("&category=" + selected_category) if selected_category else "",
+        "can_categorise": _can_categorise(request.user),
+        "legal_accounts_count": len(legal_accounts),
+        "legal_accounts_total": sum((a["total"] for a in legal_accounts), Decimal(0)),
+        "legal_matches": legal_matches,
         "view_admin_id": (request.GET.get("admin") or "").strip() if request.user.is_super_admin else "",
         "view_admin_label": view_admin_label,
         "unallocated_only": unallocated_only,
@@ -1364,11 +1422,13 @@ def xero_write_off_invoice(request):
         messages.error(request, "A reason is required to write off an invoice.")
         return redirect(request.POST.get("next") or "xero_aging_report")
 
+    owed = (OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id, invoice_id=invoice_id)
+            .values_list("amount_due", flat=True).first()) or Decimal(0)
     WriteOffInvoice.objects.update_or_create(
         tenant_id=tenant_id, invoice_id=invoice_id,
         defaults={"invoice_number": invoice_number, "contact_id": contact_id,
                   "contact_name": contact_name,
-                  "written_off_by": request.user.email},
+                  "written_off_by": request.user.email, "amount": owed},
     )
     # Lifecycle trail: log the write-off (and its reason) as an invoice comment.
     InvoiceComment.objects.create(
@@ -1420,6 +1480,7 @@ def xero_write_off_debtor(request):
             contact_id=s.contact_id or contact_id,
             contact_name=s.contact_name or contact_name,
             written_off_by=request.user.email,
+            amount=s.amount_due or Decimal(0),
         )
         InvoiceComment.objects.create(
             tenant_id=tenant_id, invoice_id=s.invoice_id, author=request.user,
@@ -2557,10 +2618,18 @@ def xero_legal(request):
     now = timezone.now()
     active_pct = []
     not_in_litigation = 0
+    # Which clerk the client belongs to and what kind of client it is, so the
+    # accounts that left the clerks' action pages can still be traced back.
+    alloc_names = {a.contact_id: (a.administrator.get_full_name() or a.administrator.email)
+                   for a in DebtorAllocation.objects.filter(tenant_id=tenant_id)
+                   .select_related("administrator")}
+    resolver = portfolio.CategoryResolver(tenant_id)
     for m in matters:
         m.amount_owed = (owed_by_cid.get(m.contact_id)
                          or owed_by_name.get(m.contact_name) or Decimal(0))
         m.report_cid = m.contact_id or m.contact_name
+        m.clerk_name = alloc_names.get(m.report_cid, "")
+        m.category_name = resolver.resolve(m.report_cid, m.contact_name)[1]
         visible = legal_workflow.visible_step_keys(m.summons_opposed, m.application_opposed)
         m.progress_total = len(visible)
         done_keys = set(m.step_states.filter(done=True).values_list("step_key", flat=True))
@@ -4122,6 +4191,390 @@ def xero_lawyer_report_preview(request):
     return resp
 
 
+# ---- Performance reports -------------------------------------------------------
+
+@login_required
+def xero_reports(request):
+    """Performance reports: portfolio, collections, recovery, ageing and
+    movement, follow-up activity and escalations, for a week / month / quarter
+    / year or a custom range, by clerk and by debtor category. Super Admins see
+    every clerk; an administrator sees the same report for their own book."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    if not _can_view_reports(request.user):
+        return redirect("xero_legal" if request.user.is_lawyer else "xero_dashboard")
+
+    period = performance.period_from_request(request.GET)
+    categories = list(DebtorCategory.objects.all())
+    scope = performance.scope_from_request(request.GET, request.user, {c.id for c in categories})
+    reason = (request.GET.get("reason") or "").strip()
+    report = performance.build_report(tenant_id, period, scope, reason_filter=reason)
+
+    clerk_label = ""
+    if scope.clerk == "unallocated":
+        clerk_label = portfolio.UNALLOCATED
+    elif scope.clerk is not None:
+        u = User.objects.filter(id=scope.clerk).first()
+        clerk_label = (u.get_full_name() or u.email) if u else "(removed user)"
+    category_label = ""
+    if scope.category == "none":
+        category_label = portfolio.UNCATEGORISED
+    elif scope.category is not None:
+        category_label = next((c.name for c in categories if c.id == scope.category), "")
+    report["clerk_label"], report["category_label"] = clerk_label, category_label
+
+    if request.GET.get("export") == "xlsx":
+        return _report_xlsx(report, request)
+
+    scope_q = scope.query() if request.user.is_super_admin else (
+        {"category": str(scope.category)} if scope.category is not None else {})
+
+    def qs(p, **extra):
+        return urlencode({**p.query(), **scope_q, **extra})
+
+    today = timezone.localdate()
+    # Switching Month -> Week while looking at this month lands on this week,
+    # not the week the month began in.
+    anchor = today if period.start <= today <= period.end else period.start
+    kind_links = []
+    for kind, label in performance.PERIOD_KINDS:
+        if kind == "custom":
+            target = performance.period_for("custom", today, period.start, period.end)
+        else:
+            target = performance.period_for(kind, anchor)
+        kind_links.append({"kind": kind, "label": label, "qs": qs(target),
+                           "active": kind == period.kind})
+    this_period = (performance.period_for(period.kind, today) if period.kind != "custom"
+                   else performance.period_for("custom", today, today.replace(day=1), today))
+
+    return render(request, "xero/reports.html", {
+        "r": report,
+        "kind_links": kind_links,
+        "q_prev": qs(period.previous()),
+        "q_next": qs(period.next()),
+        "q_this": qs(this_period),
+        "at_this": period == this_period,
+        "q_current": qs(period),
+        "q_export": qs(period, export="xlsx", **({"reason": reason} if reason else {})),
+        "scope_clerk": "" if scope.clerk is None else str(scope.clerk),
+        "scope_category": "" if scope.category is None else str(scope.category),
+        "clerk_label": clerk_label,
+        "category_label": category_label,
+        "categories": [c for c in categories if c.is_active],
+        "clerks": list(_assignable_admins()) if request.user.is_super_admin else [],
+        "is_super_admin": request.user.is_super_admin,
+        "can_categorise": _can_categorise(request.user),
+        "no_contact_days": performance.NO_CONTACT_DAYS,
+        "legal_idle_days": performance.LEGAL_IDLE_DAYS,
+    })
+
+
+def _report_xlsx(r, request):
+    """The report as a workbook: one sheet per section, plain values so it can be
+    filtered and pivoted in Excel."""
+    wb = Workbook()
+    bold = Font(bold=True)
+    head_fill = PatternFill("solid", fgColor="E6F4F3")
+    money = '#,##0.00'
+
+    def sheet(title, headers, rows, first=False):
+        ws = wb.active if first else wb.create_sheet()
+        ws.title = title[:31]
+        ws.append(headers)
+        for c in ws[1]:
+            c.font, c.fill = bold, head_fill
+        for row in rows:
+            ws.append([("" if v is None else (float(v) if isinstance(v, Decimal) else v)) for v in row])
+        for i, h in enumerate(headers, start=1):
+            letter = ws.cell(row=1, column=i).column_letter
+            ws.column_dimensions[letter].width = max(12, min(40, len(str(h)) + 4))
+            if h.startswith("R ") or h.endswith("(R)"):
+                for cell in ws[letter][1:]:
+                    cell.number_format = money
+        ws.freeze_panes = "A2"
+        return ws
+
+    s = r["summary"]
+    p, f = s["portfolio"], s["flows"]
+    scope_bits = []
+    if r.get("clerk_label"):
+        scope_bits.append(f"Clerk: {r['clerk_label']}")
+    if r.get("category_label"):
+        scope_bits.append(f"Category: {r['category_label']}")
+    sheet("Summary", ["Measure", "Value"], [
+        ["Period", r["period"].label],
+        ["From", r["period"].start.isoformat()],
+        ["To", r["period"].end.isoformat()],
+        ["Scope", ", ".join(scope_bits) or "Whole book"],
+        ["Debtors", p["all"]["accounts"]],
+        ["Total owed to FSA (R)", p["all"]["total"]],
+        ["Being chased by clerks - debtors", p["active"]["accounts"]],
+        ["Being chased by clerks (R)", p["active"]["total"]],
+        ["Waiting for a handover decision - debtors", p["handover"]["accounts"]],
+        ["Waiting for a handover decision (R)", p["handover"]["total"]],
+        ["With the attorneys - debtors", p["legal"]["accounts"]],
+        ["With the attorneys (R)", p["legal"]["total"]],
+        ["Money received (R)", f["collected"]],
+        ["Money received in the previous period (R)", s["prev_flows"]["collected"]],
+        ["Clerks' own collections (R)", f["credited"]],
+        ["Written off (R)", f["written_off"]],
+        ["Recovery rate %", round(s["recovery"], 1) if s["recovery"] is not None else "not recorded"],
+        ["Recovery rate % previous period", round(s["prev_recovery"], 1) if s["prev_recovery"] is not None else "not recorded"],
+        ["Late debtors being chased", s["followed"]["due_accounts"]],
+        ["Of which contacted in the period", s["followed"]["accounts"]],
+        ["Owed by the late debtors contacted (R)", s["followed"]["value"]],
+        ["Owed by all late debtors (R)", s["followed"]["due_value"]],
+        ["Calls", f["calls"]], ["WhatsApps", f["whatsapps"]], ["Emails", f["emails"]],
+        ["Notes", f["comments"]],
+        ["Debtors needing attention", s["escalations"]],
+        ["Owed by debtors needing attention (R)", s["escalation_value"]],
+    ], first=True)
+    ws = wb["Summary"]
+    for row in ws.iter_rows(min_row=2):
+        if str(row[0].value).endswith("(R)"):
+            row[1].number_format = money
+
+    def breakdown_rows(rows):
+        out = []
+        for x in rows:
+            pp, ff = x["portfolio"], x["flows"]
+            out.append([x["name"], pp["all"]["accounts"], pp["all"]["total"],
+                        pp["active"]["accounts"], pp["active"]["total"],
+                        pp["handover"]["accounts"], pp["handover"]["total"],
+                        pp["legal"]["accounts"], pp["legal"]["total"],
+                        ff["collected"], ff["collected_active"], ff["collected_legal"], ff["credited"],
+                        x["prev_collected"], ff["written_off"],
+                        round(x["recovery"], 1) if x["recovery"] is not None else "",
+                        ff["calls"], ff["whatsapps"], ff["emails"], ff["comments"],
+                        x["followed"]["due_accounts"], x["followed"]["accounts"], x["followed"]["value"],
+                        x["escalations"], x["escalation_value"]])
+        return out
+
+    headers = ["Name", "Debtors", "Total owed (R)", "Being chased - debtors", "Being chased (R)",
+               "Awaiting handover - debtors", "Awaiting handover (R)", "With attorneys - debtors",
+               "With attorneys (R)", "Money received (R)", "Received while being chased (R)",
+               "Received via the attorneys (R)", "Clerk's own collections (R)",
+               "Received previous period (R)", "Written off (R)", "Recovery rate %",
+               "Calls", "WhatsApps", "Emails", "Notes", "Late debtors",
+               "Late debtors contacted", "Owed by late debtors contacted (R)", "Need attention",
+               "Owed by those needing attention (R)"]
+    sheet("By clerk", ["Clerk"] + headers[1:], breakdown_rows(r["clerk_rows"]))
+    sheet("By type of debtor", ["Type of debtor"] + headers[1:], breakdown_rows(r["category_rows"]))
+
+    sheet("How late now", ["Where it is"] + [f"{b} (R)" for b in r["bucket_plain"]] + ["Total (R)"],
+          [[a["label"]] + a["buckets"] + [a["total"]] for a in r["ageing_rows"]]
+          + [["Total"] + r["ageing_total"]["buckets"] + [r["ageing_total"]["total"]]])
+
+    m = r["movement"]
+    if m:
+        rows = [["Owed at the start" + (f" ({m['opening_day']})" if m["opening_day"] else ""), m["opening"]],
+                ["New invoices & other changes", m["new"]],
+                ["Money received", m["collected"]], ["Written off", m["written_off"]],
+                ["Owed at the end" + (f" ({m['closing_day']})" if m["closing_day"] else ""), m["closing"]]]
+        rows += [[f"{b['label']} - at the start", b["opening"]] for b in m["buckets"]]
+        rows += [[f"{b['label']} - at the end", b["closing"]] for b in m["buckets"]]
+        rows += [[f"{x['label']} - at the start", x["opening"]] for x in m["statuses"]]
+        rows += [[f"{x['label']} - at the end", x["closing"]] for x in m["statuses"]]
+        sheet("How the total changed", ["Line", "Value (R)"], rows)
+
+    sheet("Earlier periods", ["Period", "From", "To", "Money received (R)", "Written off (R)",
+                              "Owed at the end (R)", "Recovery rate %", "Calls, messages & notes",
+                              "Debtors contacted"],
+          [[t["label"], t["period"].start.isoformat(), t["period"].end.isoformat(),
+            t["flows"]["collected"], t["flows"]["written_off"], t["closing"],
+            round(t["recovery"], 1) if t["recovery"] is not None else "",
+            t["flows"]["actions"], t["followed_accounts"]] for t in r["trend"]])
+
+    sheet("Need attention", ["Debtor", "Clerk", "Type of debtor", "Where it is", "Owed (R)",
+                             "Late (R)", "Most days late", "Last contact", "Why it's here",
+                             "What to do next"],
+          [[e["name"], e["admin_name"], e["category_name"], e["status_label"], e["total"],
+            e["overdue"], e["max_dpd"],
+            timezone.localtime(e["last_action"]).strftime("%Y-%m-%d") if e["last_action"] else "never",
+            "; ".join(lbl for _, lbl in e["reasons"]), "; ".join(e["todo"])] for e in r["escalations"]])
+
+    sheet("With the attorneys", ["Debtor", "Clerk", "Type of debtor", "Owed (R)", "Invoices",
+                                 "With the attorneys since", "Days with the attorneys",
+                                 "Days since last activity", "Received in the period (R)"],
+          [[x["name"], x["admin_name"], x["category_name"], x["total"], x["invoices"],
+            timezone.localtime(x["approved_at"]).strftime("%Y-%m-%d") if x["approved_at"] else "",
+            x["days_with_attorneys"], x["days_idle"], x["recovered"]] for x in r["legal_rows"]])
+
+    out = io.BytesIO()
+    wb.save(out)
+    resp = HttpResponse(out.getvalue(),
+                        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    name = f"Debtors performance - {r['period'].label}.xlsx".replace("/", "-")
+    resp["Content-Disposition"] = f'attachment; filename="{name}"'
+    return resp
+
+
+# ---- Debtor categories ---------------------------------------------------------
+
+def _debtor_codes(tenant_id, cid):
+    """A debtor's project codes, for the keyword match."""
+    rows = (OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id, contact_id=cid)
+            .values_list("project_code", flat=True))
+    if not rows:
+        rows = (OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id, contact_name=cid)
+                .values_list("project_code", flat=True))
+    return sorted({c.strip() for pc in rows for c in (pc or "").split(", ") if c.strip()})
+
+
+@login_required
+@require_POST
+def xero_debtor_category(request):
+    """Place one debtor in a category (or clear the hand-set one, so it falls
+    back to the keyword match). Used by the picker on the Debtors Action page."""
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id or not _can_categorise(request.user):
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "You don't have permission to categorise debtors."}, status=403)
+        return redirect(request.POST.get("next") or "xero_aging_report")
+    cid = (request.POST.get("contact_id") or "").strip()
+    name = (request.POST.get("contact_name") or "").strip()
+    raw = (request.POST.get("category") or "").strip()
+    if cid:
+        category = DebtorCategory.objects.filter(id=raw).first() if raw.isdigit() else None
+        if category:
+            DebtorClassification.objects.update_or_create(
+                tenant_id=tenant_id, contact_id=cid,
+                defaults={"contact_name": name, "category": category, "set_by": request.user.email})
+        else:
+            DebtorClassification.objects.filter(tenant_id=tenant_id, contact_id=cid).delete()
+    resolved = portfolio.CategoryResolver(tenant_id).resolve(cid, name, _debtor_codes(tenant_id, cid))
+    if is_ajax:
+        return JsonResponse({"ok": True, "category_id": resolved[0], "name": resolved[1],
+                             "source": resolved[2]})
+    messages.success(request, f"{name or cid}: {resolved[1]}.")
+    return redirect(request.POST.get("next") or "xero_aging_report")
+
+
+@super_admin_required
+def xero_categories(request):
+    """Debtor categories: manage the list (with the keywords that classify
+    debtors automatically) and place debtors in them, one at a time or in bulk."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    back = request.POST.get("next") or request.get_full_path()
+
+    if request.method == "POST":
+        action = request.POST.get("action") or ""
+        who = request.user.email
+        if action in ("add", "update"):
+            name = (request.POST.get("name") or "").strip()[:120]
+            keywords = ", ".join(k.strip() for k in (request.POST.get("keywords") or "").split(",")
+                                 if k.strip())[:255]
+            try:
+                order = int(request.POST.get("sort_order") or 0)
+            except ValueError:
+                order = 0
+            if not name:
+                messages.error(request, "A category needs a name.")
+                return redirect(back)
+            clash = DebtorCategory.objects.filter(name__iexact=name)
+            if action == "update":
+                cat = DebtorCategory.objects.filter(id=request.POST.get("id")).first()
+                if not cat:
+                    return redirect(back)
+                if clash.exclude(id=cat.id).exists():
+                    messages.error(request, f"There is already a category called {name}.")
+                    return redirect(back)
+                cat.name, cat.keywords, cat.sort_order = name, keywords, order
+                cat.is_active = request.POST.get("is_active") == "on"
+                cat.updated_by = who
+                cat.save()
+                messages.success(request, f"Category {name} saved.")
+            else:
+                if clash.exists():
+                    messages.error(request, f"There is already a category called {name}.")
+                    return redirect(back)
+                DebtorCategory.objects.create(name=name, keywords=keywords, sort_order=order,
+                                              updated_by=who)
+                messages.success(request, f"Category {name} added.")
+        elif action == "delete":
+            cat = DebtorCategory.objects.filter(id=request.POST.get("id")).first()
+            if cat:
+                n = cat.classifications.count()
+                cat.delete()
+                messages.success(request, f"Category {cat.name} deleted"
+                                          + (f"; {n} debtor{'s' if n != 1 else ''} it held fall back "
+                                             "to keyword matching." if n else "."))
+        elif action == "classify":
+            cids = [c for c in request.POST.getlist("cid") if c.strip()]
+            raw = (request.POST.get("category") or "").strip()
+            names = {}
+            for s in (OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id)
+                      .values("contact_id", "contact_name")):
+                names.setdefault(s["contact_id"] or s["contact_name"], s["contact_name"])
+            if not cids:
+                messages.error(request, "Tick at least one debtor first.")
+            elif raw == "auto":
+                DebtorClassification.objects.filter(tenant_id=tenant_id, contact_id__in=cids).delete()
+                messages.success(request, f"{len(cids)} debtor{'s' if len(cids) != 1 else ''} "
+                                          "set back to automatic (keyword) classification.")
+            else:
+                cat = DebtorCategory.objects.filter(id=raw).first() if raw.isdigit() else None
+                if not cat:
+                    messages.error(request, "Choose a category.")
+                else:
+                    for cid in cids:
+                        DebtorClassification.objects.update_or_create(
+                            tenant_id=tenant_id, contact_id=cid,
+                            defaults={"contact_name": names.get(cid, ""), "category": cat,
+                                      "set_by": who})
+                    messages.success(request, f"{len(cids)} debtor{'s' if len(cids) != 1 else ''} "
+                                              f"placed in {cat.name}.")
+        return redirect(back)
+
+    # Every debtor with an open balance, one row each, whatever status it is in.
+    book = portfolio.load_book(tenant_id)
+    debtors = {}
+    for p in book["positions"]:
+        d = debtors.setdefault(p["cid"], {
+            "cid": p["cid"], "name": p["name"], "admin_name": p["admin_name"],
+            "category_id": p["category_id"], "category_name": p["category_name"],
+            "category_source": p["category_source"], "total": Decimal(0), "statuses": []})
+        d["total"] += p["total"]
+        d["statuses"].append(p["status_label"])
+    rows = sorted(debtors.values(), key=lambda d: d["total"], reverse=True)
+
+    counts = defaultdict(lambda: {"accounts": 0, "total": Decimal(0), "manual": 0})
+    for d in rows:
+        c = counts[d["category_id"]]
+        c["accounts"] += 1
+        c["total"] += d["total"]
+        c["manual"] += 1 if d["category_source"] == "manual" else 0
+
+    q = (request.GET.get("q") or "").strip()
+    show = (request.GET.get("show") or "").strip()
+    cat_filter = (request.GET.get("category") or "").strip()
+    listed = rows
+    if q:
+        listed = [d for d in listed if q.lower() in d["name"].lower()]
+    if show in ("manual", "auto"):
+        listed = [d for d in listed if d["category_source"] == show]
+    elif show == "none":
+        listed = [d for d in listed if d["category_id"] is None]
+    if cat_filter.isdigit():
+        listed = [d for d in listed if d["category_id"] == int(cat_filter)]
+
+    categories = list(DebtorCategory.objects.all())
+    for c in categories:
+        c.stats = counts.get(c.id, {"accounts": 0, "total": Decimal(0), "manual": 0})
+    return render(request, "xero/categories.html", {
+        "categories": categories,
+        "uncategorised": counts.get(None, {"accounts": 0, "total": Decimal(0)}),
+        "debtors": listed,
+        "debtor_total": len(rows),
+        "q": q, "show": show, "cat_filter": cat_filter,
+        "current_full_path": request.get_full_path(),
+    })
+
+
 def _month_label(key):
     from datetime import datetime
     try:
@@ -4135,40 +4588,10 @@ PIE_COLORS = ["#16a34a", "#0E7C7B", "#2563eb", "#d97706", "#dc2626", "#7c3aed"]
 CALL_SUPPRESS_DAYS = 7
 
 
-def _abbr_money(v):
-    """Compact rand label for chart axes: R 1.2M / R 340k / R 0."""
-    v = float(v or 0)
-    a = abs(v)
-    if a >= 1_000_000:
-        return f"R {v / 1_000_000:.1f}M"
-    if a >= 1_000:
-        return f"R {v / 1_000:.0f}k"
-    return f"R {v:.0f}"
-
-
-def _nice_ceil(v):
-    """Round a max value up to a clean axis top (1/2/5 × 10^k) for tidy gridlines."""
-    import math
-    v = float(v or 0)
-    if v <= 0:
-        return 1.0
-    exp = math.floor(math.log10(v))
-    base = 10 ** exp
-    frac = v / base
-    nice = 1 if frac <= 1 else (2 if frac <= 2 else (5 if frac <= 5 else 10))
-    return nice * base
-
-
-def _y_ticks(top, plot_top, plot_bottom, n=4):
-    """Evenly-spaced horizontal axis ticks from 0 (bottom) to `top`, each with the
-    pixel y for the gridline, a text baseline y, and an abbreviated rand label."""
-    ticks = []
-    for i in range(n + 1):
-        frac = i / n
-        y = plot_bottom - frac * (plot_bottom - plot_top)
-        ticks.append({"y": round(y, 1), "ty": round(y + 3.5, 1),
-                      "label": _abbr_money(top * frac)})
-    return ticks
+# Chart-axis helpers, shared with the performance reports.
+_abbr_money = performance.abbr_money
+_nice_ceil = performance.nice_ceil
+_y_ticks = performance.y_ticks
 
 
 def _mom_line(mom, width=760, height=210):
@@ -4320,9 +4743,10 @@ def xero_dashboard(request):
     go_live_date = SystemSetting.get_solo().go_live_date
     cadence_shift_map = _cadence_shift_map(tenant_id)
     channel_due_map = _channel_due_map(tenant_id)
-    # Closed businesses are excluded from all dashboard figures.
-    closed_ids = set(ClosedDebtor.objects.filter(tenant_id=tenant_id)
-                     .values_list("contact_id", flat=True))
+    # Where each open invoice sits. Closed businesses and written-off invoices
+    # are excluded from all dashboard figures; accounts in handover or with the
+    # attorneys are counted in their own right, not as a clerk's active workload.
+    status_map = portfolio.invoice_status_map(tenant_id)
 
     # System (super admin) and per-administrator aggregates.
     system_total = Decimal(0)
@@ -4330,14 +4754,18 @@ def xero_dashboard(request):
     system_bucket_counts = defaultdict(int)
     system_companies = set()
     system_calls = system_final = system_handover = system_missed = 0
+    system_split = {st: {"companies": set(), "total": Decimal(0)} for st in portfolio.OPEN_STATUSES}
     admin_stats = defaultdict(lambda: {"companies": set(), "total": Decimal(0),
-                                       "calls": 0, "final": 0, "handover": 0, "missed": 0})
+                                       "calls": 0, "final": 0, "handover": 0, "missed": 0,
+                                       "ho_companies": set(), "ho_total": Decimal(0),
+                                       "legal_companies": set(), "legal_total": Decimal(0)})
     # Current user (administrator view).
     my_total = Decimal(0)
     my_mom = defaultdict(lambda: Decimal(0))
     my_bucket_counts = defaultdict(int)
     my_companies = set()
     my_calls = my_final = my_handover = my_missed = 0
+    my_split = {st: {"companies": set(), "total": Decimal(0)} for st in portfolio.OPEN_STATUSES}
     call_list = []
     # Per-debtor accumulator for the critical/priority lists.
     debtor_acc = {}
@@ -4345,21 +4773,50 @@ def xero_dashboard(request):
     for s in open_qs.values("contact_id", "contact_name", "amount_due", "invoice_date",
                             "days_past_due", "bucket", "invoice_id", "invoice_number"):
         cid = s["contact_id"] or s["contact_name"] or "Unknown"
-        if cid in closed_ids:
+        status = status_map.get(s["invoice_id"])
+        if status not in portfolio.OPEN_STATUSES:
             continue
         ad = s["amount_due"]
         dpd = s["days_past_due"]
-        eff_dpd = _effective_dpd(dpd, s["contact_id"], cadence_shift_map)
         key = s["invoice_date"].strftime("%Y-%m") if s["invoice_date"] else "No date"
         admin = cid_to_admin.get(cid)
+
+        # The whole book - active, handover and with the attorneys - is the
+        # system's outstanding.
+        system_total += ad
+        system_mom[key] += ad
+        system_bucket_counts[s["bucket"]] += 1
+        system_companies.add(cid)
+        system_split[status]["companies"].add(cid)
+        system_split[status]["total"] += ad
+        if cid in my_cids:
+            my_split[status]["companies"].add(cid)
+            my_split[status]["total"] += ad
+        if status == portfolio.LEGAL:
+            if admin:
+                admin_stats[admin.id]["legal_companies"].add(cid)
+                admin_stats[admin.id]["legal_total"] += ad
+            continue
+
+        # Critical debtors are the big, aged books not yet with the attorneys.
         da = debtor_acc.get(cid)
         if da is None:
             da = debtor_acc[cid] = {"cid": cid, "name": s["contact_name"] or "Unknown",
-                                    "total": Decimal(0), "max_dpd": 0,
+                                    "total": Decimal(0), "max_dpd": 0, "in_handover": False,
                                     "admin_id": admin.id if admin else None,
                                     "admin_name": (admin.get_full_name() or admin.email) if admin else ""}
         da["total"] += ad
         da["max_dpd"] = max(da["max_dpd"], dpd or 0)
+        if status == portfolio.HANDOVER:
+            da["in_handover"] = True
+            if admin:
+                admin_stats[admin.id]["ho_companies"].add(cid)
+                admin_stats[admin.id]["ho_total"] += ad
+            continue
+
+        # Active collections from here on: the follow-up prompts and each
+        # clerk's working book.
+        eff_dpd = _effective_dpd(dpd, s["contact_id"], cadence_shift_map)
         called_recently = s["invoice_id"] in recent_call_invoices
         ch_over = channel_due_map.get(s["contact_id"]) or {}
         needs_call_now = outreach.channel_due(eff_dpd, ch_over.get("call")) and not called_recently
@@ -4371,10 +4828,6 @@ def xero_dashboard(request):
                      or outreach.channel_missed(eff_dpd, iid in ever_wa_invoices, ch_over.get("whatsapp"))
                      or outreach.channel_missed(eff_dpd, iid in ever_email_invoices, ch_over.get("email")))
 
-        system_total += ad
-        system_mom[key] += ad
-        system_bucket_counts[s["bucket"]] += 1
-        system_companies.add(cid)
         system_calls += 1 if needs_call_now else 0
         system_final += 1 if is_final else 0
         system_handover += 1 if is_hand else 0
@@ -4431,8 +4884,9 @@ def xero_dashboard(request):
     my_recovery_bars = _recovery_bars(my_mom, my_rec_mom)
 
     # Priority debtors for the viewed admin: biggest books, most overdue first.
+    # Their active workload only - a client in handover is waiting on a decision.
     my_priority = sorted(
-        (d for cid, d in debtor_acc.items() if cid in my_cids),
+        (d for cid, d in debtor_acc.items() if cid in my_cids and not d["in_handover"]),
         key=lambda d: (d["max_dpd"], d["total"]), reverse=True)[:8] if target_id else []
 
     ctx = {
@@ -4443,6 +4897,12 @@ def xero_dashboard(request):
         "admins": list(_assignable_admins()) if is_super else [],
         "my_alloc_count": len(my_cids),
         "my_total": my_total,
+        # The clerk's book split by where it sits. Handover and attorney
+        # accounts are theirs to know about, not to action.
+        "my_handover_companies": len(my_split[portfolio.HANDOVER]["companies"]),
+        "my_handover_total": my_split[portfolio.HANDOVER]["total"],
+        "my_legal_companies": len(my_split[portfolio.LEGAL]["companies"]),
+        "my_legal_total": my_split[portfolio.LEGAL]["total"],
         "my_company_count": len(my_companies),
         "my_mom_chart": _mom_line(my_mom),
         "my_pie": _pie(my_bucket_counts),
@@ -4470,7 +4930,9 @@ def xero_dashboard(request):
         # left) would vanish from the table and the per-admin figures wouldn't
         # reconcile with the system totals.
         zero_st = {"companies": set(), "total": Decimal(0), "calls": 0,
-                   "final": 0, "handover": 0, "missed": 0}
+                   "final": 0, "handover": 0, "missed": 0,
+                   "ho_companies": set(), "ho_total": Decimal(0),
+                   "legal_companies": set(), "legal_total": Decimal(0)}
         admin_ids = (set(admin_stats) | set(rec_total_by_admin)
                      | set(rec_month_by_admin)) - {None}
         admin_overview = []
@@ -4483,6 +4945,8 @@ def xero_dashboard(request):
                 "name": (u.get_full_name() or u.email) if u else "(removed user)",
                 "companies": companies, "total": st["total"], "calls": st["calls"],
                 "final": st["final"], "handover": st["handover"], "missed": st["missed"],
+                "ho_companies": len(st["ho_companies"]), "ho_total": st["ho_total"],
+                "legal_companies": len(st["legal_companies"]), "legal_total": st["legal_total"],
                 "recovered_total": rec_total_by_admin.get(aid) or Decimal(0),
                 "recovered_month": rec_month_by_admin.get(aid) or Decimal(0),
                 "pct": (companies / max_clients * 100) if max_clients else 0,
@@ -4519,6 +4983,12 @@ def xero_dashboard(request):
         ctx.update({
             "system_total": system_total,
             "system_debtors": len(system_companies),
+            "system_active_total": system_split[portfolio.ACTIVE]["total"],
+            "system_active_companies": len(system_split[portfolio.ACTIVE]["companies"]),
+            "system_handover_total": system_split[portfolio.HANDOVER]["total"],
+            "system_handover_companies": len(system_split[portfolio.HANDOVER]["companies"]),
+            "system_legal_total": system_split[portfolio.LEGAL]["total"],
+            "system_legal_companies": len(system_split[portfolio.LEGAL]["companies"]),
             "system_calls": system_calls,
             "system_missed": system_missed,
             "system_final": system_final,

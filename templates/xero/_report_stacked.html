@@ -1,0 +1,24 @@
+{% load humanize %}
+{% comment %}Outstanding at the end of each period, stacked by age band on an
+ordinal ramp (light = not yet due, dark = 120+ days). Periods before the
+balance history began have no bar; the table says "not recorded".{% endcomment %}
+{% if chart.has_data %}
+<svg class="rpsvg" viewBox="0 0 {{ chart.width }} {{ chart.height }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Outstanding at period end by age">
+    {% for t in chart.yticks %}
+    <line class="grid" x1="{{ chart.plot_left }}" y1="{{ t.y }}" x2="{{ chart.plot_right }}" y2="{{ t.y }}"></line>
+    <text class="ytick" x="{{ chart.ylabel_x }}" y="{{ t.ty }}" text-anchor="end">{{ t.label }}</text>
+    {% endfor %}
+    {% for c in chart.cols %}
+    <g class="rp-col">
+        {% for sg in c.segs %}<path d="{{ sg.path }}" fill="{{ sg.colour }}"><title>{{ c.label }} &middot; {{ sg.bucket }}: R {{ sg.value|floatformat:2|intcomma }}</title></path>{% endfor %}
+        <title>{{ c.label }}{% if c.missing %}: not recorded{% else %}: R {{ c.total|floatformat:2|intcomma }}{% for b in c.buckets %}&#10;{{ b.0 }}: R {{ b.1|floatformat:2|intcomma }}{% endfor %}{% endif %}</title>
+    </g>
+    <text class="xtick" x="{{ c.cx }}" y="{{ chart.label_y }}" text-anchor="middle">{{ c.short }}</text>
+    {% endfor %}
+</svg>
+<div class="rp-legend">
+    {% for lbl, colour in chart.legend %}<span><span class="sw" style="background: {{ colour }};"></span>{{ lbl }}</span>{% endfor %}
+</div>
+{% else %}
+<p class="muted">No balance history recorded for these periods yet &mdash; it builds up from the first sync after this feature went live.</p>
+{% endif %}

@@ -73,6 +73,8 @@
             <h1 class="page-title">Dashboard</h1>
             <p class="page-subtitle mt-0">Connected to <strong>{{ tenant_name }}</strong></p>
         </div>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <a class="btn btn-secondary btn-sm" href="{% url 'xero_reports' %}{% if view_admin_id %}?clerk={{ view_admin_id }}{% endif %}">Performance reports &rarr;</a>
         {% if is_super_admin %}
         <form method="get" style="display:flex; align-items:center; gap:8px;">
             <label style="font-size:13px; font-weight:600; color:var(--text-muted);">View administrator:</label>
@@ -84,6 +86,7 @@
             </select>
         </form>
         {% endif %}
+        </div>
     </div>
 </div>
 
@@ -92,11 +95,13 @@
     <h2 class="mt-0">System Overview</h2>
     <div class="status-grid">
         <div class="status-tile accent"><div class="label">Total outstanding</div><div class="value">R&nbsp;{{ system_total|floatformat:2|intcomma }}</div></div>
-        <div class="status-tile"><div class="label">Debtors with balances</div><div class="value">{{ system_debtors }}</div></div>
+        <a class="status-tile" href="{% url 'xero_aging_report' %}"><div class="label">Active collections</div><div class="value">R&nbsp;{{ system_active_total|floatformat:2|intcomma }}</div><div class="hint">{{ system_active_companies }} debtor{{ system_active_companies|pluralize }} on the action pages</div></a>
+        <a class="status-tile" href="{% url 'xero_handover' %}"><div class="label">In handover</div><div class="value">R&nbsp;{{ system_handover_total|floatformat:2|intcomma }}</div><div class="hint">{{ system_handover_companies }} debtor{{ system_handover_companies|pluralize }} awaiting a decision</div></a>
+        <a class="status-tile" href="{% url 'xero_legal' %}"><div class="label">&#9878; With attorneys</div><div class="value">R&nbsp;{{ system_legal_total|floatformat:2|intcomma }}</div><div class="hint">{{ system_legal_companies }} debtor{{ system_legal_companies|pluralize }} &middot; off the action pages</div></a>
         <a class="status-tile call" href="{% url 'xero_aging_report' %}?stage=call"><div class="label">&#128222; Calls required</div><div class="value">{{ system_calls }}</div><div class="hint">view &rarr;</div></a>
         <a class="status-tile missed" href="{% url 'xero_aging_report' %}?stage=missed"><div class="label">&#9888; Missed calls</div><div class="value">{{ system_missed }}</div><div class="hint">view &rarr;</div></a>
         <a class="status-tile warn" href="{% url 'xero_aging_report' %}?stage=final"><div class="label">At final demand</div><div class="value">{{ system_final }}</div><div class="hint">view &rarr;</div></a>
-        <a class="status-tile danger" href="{% url 'xero_aging_report' %}?stage=handover"><div class="label">At handover</div><div class="value">{{ system_handover }}</div><div class="hint">view &rarr;</div></a>
+        <a class="status-tile danger" href="{% url 'xero_aging_report' %}?stage=handover"><div class="label">At handover age</div><div class="value">{{ system_handover }}</div><div class="hint">still on the action page &rarr;</div></a>
         <div class="status-tile recovered"><div class="label">&#128176; Recovered this month</div><div class="value">R&nbsp;{{ system_recovered_month|floatformat:2|intcomma }}</div><div class="hint">all-time R {{ system_recovered_total|floatformat:2|intcomma }}{% if system_recovered_legal_month %} &middot; R {{ system_recovered_legal_month|floatformat:2|intcomma }} via lawyers{% endif %}</div></div>
         <div class="status-tile"><div class="label">Unallocated companies</div><div class="value">{{ unallocated }}</div></div>
     </div>
@@ -139,11 +144,12 @@
     <h2 class="mt-0">&#128680; Critical debtors &mdash; urgent action</h2>
     <p class="page-subtitle mt-0">Biggest books that are at final-demand / handover age (60+ days) and not yet with the lawyers.</p>
     <table class="data-table">
-        <thead><tr><th>Company</th><th class="num">Outstanding</th><th class="num">Most overdue</th><th>Allocated to</th></tr></thead>
+        <thead><tr><th>Company</th><th>Where</th><th class="num">Outstanding</th><th class="num">Most overdue</th><th>Allocated to</th></tr></thead>
         <tbody>
             {% for d in critical_debtors %}
             <tr>
                 <td><a href="{% url 'xero_company_report' %}?cid={{ d.cid|urlencode }}" target="_blank" rel="noopener">{{ d.name }}</a></td>
+                <td>{% if d.in_handover %}<a href="{% url 'xero_handover' %}?q={{ d.name|urlencode }}">In handover</a>{% else %}<a href="{% url 'xero_aging_report' %}?q={{ d.name|urlencode }}">Active collections</a>{% endif %}</td>
                 <td class="num"><strong>R&nbsp;{{ d.total|floatformat:2|intcomma }}</strong></td>
                 <td class="num"><strong style="color:#b91c1c;">{{ d.max_dpd }} days</strong></td>
                 <td>{{ d.admin_name|default:"— Unallocated —" }}</td>
@@ -156,9 +162,9 @@
 
 <div class="page-card">
     <h2 class="mt-0">Administrator Tracking</h2>
-    <p class="page-subtitle mt-0">Clients allocated and book health per administrator. {{ unallocated }} compan{{ unallocated|pluralize:"y,ies" }} unallocated.</p>
+    <p class="page-subtitle mt-0">Each administrator's active workload, with the accounts they hold that sit in handover or with the attorneys shown separately. {{ unallocated }} compan{{ unallocated|pluralize:"y,ies" }} unallocated. <a href="{% url 'xero_reports' %}">Full performance report &rarr;</a></p>
 
-    <h3 style="margin:6px 0 10px;">Clients allocated</h3>
+    <h3 style="margin:6px 0 10px;">Active clients allocated</h3>
     {% for a in admin_overview %}
     <div class="alloc-bar-row">
         <span>{{ a.name }}</span>
@@ -170,8 +176,9 @@
     {% if admin_overview %}
     <table class="data-table" style="margin-top:14px;">
         <thead>
-            <tr><th>Administrator</th><th class="num">Clients allocated</th><th class="num">Outstanding</th>
-                <th class="num">Recovered (mo)</th><th class="num">Calls required</th><th class="num">Missed calls</th><th class="num">Final demand</th><th class="num">Handover</th><th></th></tr>
+            <tr><th>Administrator</th><th class="num">Active clients</th><th class="num">Active outstanding</th>
+                <th class="num">In handover</th><th class="num">With attorneys</th>
+                <th class="num">Recovered (mo)</th><th class="num">Calls required</th><th class="num">Missed calls</th><th class="num">Final demand</th><th class="num">Handover age</th><th></th></tr>
         </thead>
         <tbody>
             {% for a in admin_overview %}
@@ -179,6 +186,8 @@
                 <td><a href="?admin={{ a.id }}">{{ a.name }}</a></td>
                 <td class="num">{{ a.companies }}</td>
                 <td class="num">R&nbsp;{{ a.total|floatformat:2|intcomma }}</td>
+                <td class="num" style="white-space:nowrap;">{% if a.ho_companies %}{{ a.ho_companies }} &middot; R&nbsp;{{ a.ho_total|floatformat:2|intcomma }}{% else %}&mdash;{% endif %}</td>
+                <td class="num" style="white-space:nowrap;">{% if a.legal_companies %}{{ a.legal_companies }} &middot; R&nbsp;{{ a.legal_total|floatformat:2|intcomma }}{% else %}&mdash;{% endif %}</td>
                 <td class="num" title="All-time: R {{ a.recovered_total|floatformat:2|intcomma }}">{% if a.recovered_month %}<strong style="color:#047857;">R&nbsp;{{ a.recovered_month|floatformat:2|intcomma }}</strong>{% else %}&mdash;{% endif %}</td>
                 <td class="num">{{ a.calls }}</td>
                 <td class="num">{% if a.missed %}<strong style="color:#b91c1c;">{{ a.missed }}</strong>{% else %}0{% endif %}</td>
@@ -200,12 +209,14 @@
         <a class="btn btn-secondary btn-sm" href="{% url 'xero_aging_report' %}{% if view_admin_id %}?admin={{ view_admin_id }}{% endif %}">View {% if view_admin_name %}their{% else %}my{% endif %} debtors</a>
     </div>
     <div class="status-grid">
-        <div class="status-tile accent"><div class="label">{% if view_admin_name %}Outstanding{% else %}My outstanding{% endif %}</div><div class="value">R&nbsp;{{ my_total|floatformat:2|intcomma }}</div></div>
-        <div class="status-tile"><div class="label">Companies allocated</div><div class="value">{{ my_alloc_count }}</div></div>
+        <div class="status-tile accent"><div class="label">{% if view_admin_name %}Active outstanding{% else %}My active outstanding{% endif %}</div><div class="value">R&nbsp;{{ my_total|floatformat:2|intcomma }}</div><div class="hint" style="color:#d6f1f0;">{{ my_company_count }} active compan{{ my_company_count|pluralize:"y,ies" }}</div></div>
+        <div class="status-tile"><div class="label">Companies allocated</div><div class="value">{{ my_alloc_count }}</div><div class="hint">incl. handover, attorneys &amp; settled</div></div>
+        <a class="status-tile" href="{% url 'xero_handover' %}"><div class="label">In handover</div><div class="value">R&nbsp;{{ my_handover_total|floatformat:2|intcomma }}</div><div class="hint">{{ my_handover_companies }} compan{{ my_handover_companies|pluralize:"y,ies" }} &middot; awaiting a decision</div></a>
+        <a class="status-tile" href="{% url 'xero_legal' %}"><div class="label">&#9878; With attorneys</div><div class="value">R&nbsp;{{ my_legal_total|floatformat:2|intcomma }}</div><div class="hint">{{ my_legal_companies }} compan{{ my_legal_companies|pluralize:"y,ies" }} &middot; not your active workload</div></a>
         <a class="status-tile call" href="{% url 'xero_aging_report' %}?stage=call{% if view_admin_id %}&amp;admin={{ view_admin_id }}{% endif %}"><div class="label">&#128222; Calls required</div><div class="value">{{ calls_required }}</div><div class="hint">view &rarr;</div></a>
         <a class="status-tile missed" href="{% url 'xero_aging_report' %}?stage=missed{% if view_admin_id %}&amp;admin={{ view_admin_id }}{% endif %}"><div class="label">&#9888; Missed calls</div><div class="value">{{ missed_calls }}</div><div class="hint">view &rarr;</div></a>
         <a class="status-tile warn" href="{% url 'xero_aging_report' %}?stage=final{% if view_admin_id %}&amp;admin={{ view_admin_id }}{% endif %}"><div class="label">At final demand</div><div class="value">{{ final_demand_count }}</div><div class="hint">view &rarr;</div></a>
-        <a class="status-tile danger" href="{% url 'xero_aging_report' %}?stage=handover{% if view_admin_id %}&amp;admin={{ view_admin_id }}{% endif %}"><div class="label">At handover</div><div class="value">{{ handover_count }}</div><div class="hint">view &rarr;</div></a>
+        <a class="status-tile danger" href="{% url 'xero_aging_report' %}?stage=handover{% if view_admin_id %}&amp;admin={{ view_admin_id }}{% endif %}"><div class="label">At handover age</div><div class="value">{{ handover_count }}</div><div class="hint">view &rarr;</div></a>
         <div class="status-tile recovered"><div class="label">&#128176; Recovered this month</div><div class="value">R&nbsp;{{ my_recovered_month|floatformat:2|intcomma }}</div><div class="hint">all-time R {{ my_recovered_total|floatformat:2|intcomma }}</div></div>
     </div>
 

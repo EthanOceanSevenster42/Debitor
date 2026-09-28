@@ -140,6 +140,10 @@ def detect_recoveries(tenant_id, prev_snapshot):
             amount=delta, credited=credited,
             administrator=credit_admin,
             administrator_name=(credit_admin.get_full_name() or credit_admin.email) if credit_admin else "",
+            # Whose portfolio the money came in on, whether or not it counts as
+            # their collection - what the reports total against each clerk.
+            allocated_admin=admin,
+            allocated_admin_name=(admin.get_full_name() or admin.email) if admin else "",
             reason=reason, days_past_due=dpd,
         ))
 

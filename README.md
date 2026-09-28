@@ -228,6 +228,11 @@ whether to do anything — so it's safe (and intended) to fire them **hourly**.
 | `manage.py sync_xero` | Pulls open invoices Xero → SQL (rate-limited to half of Xero's limits) | In-app **Schedule** page |
 | `manage.py send_lawyer_report` | Sends the weekly lawyer report **if due** | In-app **Lawyer Report** page |
 
+`sync_xero` also records a daily **portfolio snapshot** (each debtor's balance by
+clerk, status and age) that the Performance Reports use for opening/closing
+balances and trends. Nothing extra needs scheduling; `manage.py
+capture_portfolio_snapshot` takes one by hand (e.g. straight after deploying).
+
 ### Linux — systemd timers (recommended)
 
 The repo ships the units plus an idempotent installer, so the schedule is
@@ -355,7 +360,24 @@ page — and only a Super Admin can **bring it back**. On approval, the configur
 
 ## 15. What changed recently (for the deploying dev)
 
-Since the previous build:
+**Reporting & performance management** (latest):
+
+- **Performance Reports** page (`/xero/reports/`, Super Admin + Administrator) —
+  portfolio, collections, recovery %, ageing & movement, follow-up activity,
+  escalations and attorney accounts, by week / month / quarter / year / custom
+  range, filterable by clerk and debtor category, with an Excel export.
+- **Debtor categories** (`/xero/categories/`, Super Admin) — managed list with
+  keyword auto-classification plus hand-set overrides; category filter and picker
+  on the Debtors Action page.
+- **Clients with an approved legal matter leave the Debtors Action page entirely**
+  and are no longer counted as a clerk's active workload on the Dashboard.
+- **Migrations `0037`–`0038`** — new tables `DebtorCategory`,
+  `DebtorClassification`, `PortfolioSnapshot`; new columns
+  `RecoveredInvoice.allocated_admin(_name)` and `WriteOffInvoice.amount`; seeds the
+  starting categories and back-fills the new columns. Run `python manage.py migrate`.
+- New command `capture_portfolio_snapshot` (optional — the sync already does it).
+
+Earlier:
 
 - **Outbound email via Microsoft Graph** — new `MS_GRAPH_*` env vars and a custom
   Django email backend (`xero_app/mail_backend.py`). All Django mail flows through it.

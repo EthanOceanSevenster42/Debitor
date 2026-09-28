@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Debtor Categories - FSA Debtor System{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cat-table td { vertical-align: middle; }
+    .cat-table input.form-control { padding: 6px 9px; font-size: 13px; }
+    .cat-table .kw { min-width: 220px; }
+    .cat-table .ord { width: 70px; }
+    .data-table th.num, .data-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .src { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+    .src.manual { background: #e0f2f2; color: #065f5e; }
+    .src.auto { background: #f1f5f9; color: #475569; }
+    .src.none { background: #fff7ed; color: #9a3412; }
+    .bulk-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #fff; padding: 10px 0; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+    .bulk-bar .form-control { width: auto; padding: 6px 10px; font-size: 13px; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 6px; }
+    .filters .form-control { width: auto; padding: 6px 10px; font-size: 13px; }
+    .scroll { overflow-x: auto; }
+    .note { font-size: 12.5px; color: var(--text-muted); line-height: 1.55; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-card">
+    <div class="flex-between" style="flex-wrap:wrap;">
+        <h1 class="page-title">Debtor Categories</h1>
+        <a class="btn btn-secondary btn-sm" href="{% url 'xero_reports' %}">Performance reports &rarr;</a>
+    </div>
+    <p class="page-subtitle">The kinds of client the book is reported on. A debtor you place in a category stays there; any other debtor is placed automatically when one of a category's <strong>keywords</strong> appears in its name or its invoices' project codes (first match in the order below), otherwise it is <em>Uncategorised</em>.</p>
+
+    {% comment %}One form per row, kept outside the table (a form cannot sit
+    inside a table row); each row's inputs join theirs through form="…".{% endcomment %}
+    {% for c in categories %}<form method="post" id="cat-{{ c.id }}">{% csrf_token %}<input type="hidden" name="action" value="update"><input type="hidden" name="id" value="{{ c.id }}"></form>{% endfor %}
+    <form method="post" id="cat-new">{% csrf_token %}<input type="hidden" name="action" value="add"></form>
+    <div class="scroll">
+    <table class="data-table cat-table">
+        <thead><tr><th>Name</th><th>Keywords <span class="muted" style="font-weight:400;">(comma-separated)</span></th><th>Order</th><th>Active</th><th class="num">Debtors</th><th class="num">Outstanding</th><th></th></tr></thead>
+        <tbody>
+            {% for c in categories %}
+            <tr>
+                <td><input form="cat-{{ c.id }}" class="form-control" name="name" value="{{ c.name }}" required maxlength="120"></td>
+                <td><input form="cat-{{ c.id }}" class="form-control kw" name="keywords" value="{{ c.keywords }}" placeholder="e.g. abattoir, butchery"></td>
+                <td><input form="cat-{{ c.id }}" class="form-control ord" type="number" name="sort_order" value="{{ c.sort_order }}"></td>
+                <td><input form="cat-{{ c.id }}" type="checkbox" name="is_active"{% if c.is_active %} checked{% endif %} title="Inactive categories are not offered or matched, but keep the debtors placed in them by hand"></td>
+                <td class="num"><a href="?category={{ c.id }}">{{ c.stats.accounts }}</a>{% if c.stats.manual %} <span class="muted" style="font-size:11px;">({{ c.stats.manual }} by hand)</span>{% endif %}</td>
+                <td class="num">R&nbsp;{{ c.stats.total|floatformat:2|intcomma }}</td>
+                <td style="white-space:nowrap;">
+                    <button form="cat-{{ c.id }}" type="submit" class="btn btn-secondary btn-sm">Save</button>
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Delete {{ c.name|escapejs }}? Debtors placed in it by hand fall back to keyword matching.');">
+                        {% csrf_token %}<input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ c.id }}">
+                        <button type="submit" class="btn btn-secondary btn-sm" title="Delete category">&#10005;</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            <tr>
+                <td class="muted"><em>Uncategorised</em></td><td colspan="3" class="muted" style="font-size:12.5px;">matched no keyword and not set by hand</td>
+                <td class="num"><a href="?show=none">{{ uncategorised.accounts }}</a></td>
+                <td class="num">R&nbsp;{{ uncategorised.total|floatformat:2|intcomma }}</td><td></td>
+            </tr>
+            <tr>
+                <td><input form="cat-new" class="form-control" name="name" placeholder="New category name" required maxlength="120"></td>
+                <td><input form="cat-new" class="form-control kw" name="keywords" placeholder="optional keywords"></td>
+                <td><input form="cat-new" class="form-control ord" type="number" name="sort_order" value="50"></td>
+                <td></td><td></td><td></td>
+                <td><button form="cat-new" type="submit" class="btn btn-primary btn-sm">+ Add</button></td>
+            </tr>
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<div class="page-card">
+    <h2 class="mt-0">Classify debtors</h2>
+    <p class="note" style="margin-top:0;">Every debtor with an open balance ({{ debtor_total }}). Tick the ones to change, pick a category and apply. <strong>Automatic</strong> removes a hand-set category so the keyword match applies again.</p>
+
+    <form method="get" class="filters">
+        <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Search debtor name…" style="min-width:240px;">
+        <select name="show" class="form-control" onchange="this.form.submit()">
+            <option value="">All debtors</option>
+            <option value="none"{% if show == 'none' %} selected{% endif %}>Uncategorised only</option>
+            <option value="auto"{% if show == 'auto' %} selected{% endif %}>Matched automatically</option>
+            <option value="manual"{% if show == 'manual' %} selected{% endif %}>Set by hand</option>
+        </select>
+        <select name="category" class="form-control" onchange="this.form.submit()">
+            <option value="">Any category</option>
+            {% for c in categories %}<option value="{{ c.id }}"{% if cat_filter == c.id|stringformat:'s' %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+        {% if q or show or cat_filter %}<a href="{% url 'xero_categories' %}">Clear</a>{% endif %}
+    </form>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="classify">
+        <input type="hidden" name="next" value="{{ current_full_path }}">
+        <div class="bulk-bar">
+            <label style="font-size:13px; font-weight:600;"><input type="checkbox" id="tick-all"> Select all shown ({{ debtors|length }})</label>
+            <span class="muted" style="font-size:13px;" id="tick-count">0 selected</span>
+            <select name="category" class="form-control" required>
+                <option value="">Place selected in&hellip;</option>
+                {% for c in categories %}{% if c.is_active %}<option value="{{ c.id }}">{{ c.name }}</option>{% endif %}{% endfor %}
+                <option value="auto">Automatic (keywords)</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        </div>
+        <div class="scroll">
+        <table class="data-table">
+            <thead><tr><th></th><th>Debtor</th><th>Clerk</th><th>Where</th><th class="num">Outstanding</th><th>Category</th></tr></thead>
+            <tbody>
+                {% for d in debtors %}
+                <tr>
+                    <td><input type="checkbox" name="cid" value="{{ d.cid }}" class="tick" aria-label="Select {{ d.name }}"></td>
+                    <td style="font-weight:600;">{{ d.name }}</td>
+                    <td>{{ d.admin_name|default:"Unallocated" }}</td>
+                    <td style="font-size:12.5px;">{{ d.statuses|join:", " }}</td>
+                    <td class="num">R&nbsp;{{ d.total|floatformat:2|intcomma }}</td>
+                    <td>{{ d.category_name }}
+                        {% if d.category_source == 'manual' %}<span class="src manual">set by hand</span>{% elif d.category_source == 'auto' %}<span class="src auto">keyword</span>{% else %}<span class="src none">none</span>{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="muted">No debtors match.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_body %}
+<script>
+(function () {
+    var all = document.getElementById('tick-all'), count = document.getElementById('tick-count');
+    function boxes() { return document.querySelectorAll('input.tick'); }
+    function update() {
+        var n = 0;
+        boxes().forEach(function (b) { if (b.checked) n++; });
+        if (count) count.textContent = n + ' selected';
+    }
+    if (all) all.addEventListener('change', function () {
+        boxes().forEach(function (b) { b.checked = all.checked; });
+        update();
+    });
+    document.addEventListener('change', function (e) {
+        if (e.target.classList && e.target.classList.contains('tick')) update();
+    });
+})();
+</script>
+{% endblock %}

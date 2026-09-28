@@ -42,6 +42,11 @@
     .alloc-status.saving { color: var(--text-muted); }
     .alloc-status.saved { color: #16a34a; font-weight: 600; }
     .alloc-status.error { color: #b91c1c; font-weight: 600; }
+    .cat-hint { font-size: 11px; color: var(--text-muted); font-style: italic; white-space: nowrap; }
+    .cat-chip { font-size: 11.5px; font-weight: 600; color: #334155; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+    .cat-chip.none { color: var(--text-muted); font-weight: 400; font-style: italic; }
+    .legal-note { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .legal-note ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
     .zero { color: #bbb; }
     .contact { font-weight: 600; }
     .email { color: #888; font-size: 12px; padding-left: 22px; }
@@ -873,6 +878,38 @@ function allocateDebtor(sel) {
       });
 }
 
+// --- Place a debtor in a category (live, no page reload) ---
+// "Automatic" clears the hand-set category, so the keyword match (or
+// Uncategorised) applies again; the hint shows what that resolved to.
+function categoriseDebtor(sel) {
+    var form = sel.form;
+    if (!form) return;
+    var status = form.querySelector('.alloc-status');
+    var hint = form.querySelector('.cat-hint');
+    if (status) { status.textContent = '…'; status.className = 'alloc-status saving'; }
+    var data = new FormData(form);
+    sel.disabled = true;
+    fetch(form.action, {
+        method: 'POST', body: data, credentials: 'same-origin',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+    }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, data: d}; }); })
+      .then(function (res) {
+          sel.disabled = false;
+          if (!res.ok || !res.data.ok) throw new Error((res.data && res.data.error) || 'Failed');
+          if (hint) hint.textContent = res.data.source === 'manual' ? '' :
+              (res.data.source === 'auto' ? '(auto: ' + res.data.name + ')' : '(uncategorised)');
+          if (status) {
+              status.textContent = '✓ Saved';
+              status.className = 'alloc-status saved';
+              setTimeout(function () { status.textContent = ''; status.className = 'alloc-status'; }, 1800);
+          }
+      })
+      .catch(function (err) {
+          sel.disabled = false;
+          if (status) { status.textContent = '⚠ ' + (err.message || 'Error'); status.className = 'alloc-status error'; }
+      });
+}
+
 // --- Per-row kebab menu ---
 function closeAllRowMenus() {
     document.querySelectorAll('.row-menu[data-open="true"]').forEach(function (m) { m.dataset.open = 'false'; });
@@ -947,6 +984,25 @@ document.addEventListener('click', function (e) {
     </div>
     {% endif %}
 
+    {% if legal_accounts_count %}
+    {% comment %}Clients formally with the attorneys are not active workload, so
+    they are not listed below. This keeps them accounted for.{% endcomment %}
+    <div class="alert alert-info legal-note">
+        <div>
+            &#9878; <strong>{{ legal_accounts_count }} account{{ legal_accounts_count|pluralize }}</strong>
+            (R&nbsp;{{ legal_accounts_total|floatformat:2|intcomma }}) {% if legal_accounts_count == 1 %}is{% else %}are{% endif %} with the attorneys and no longer listed here.
+            {% if legal_matches %}
+            <ul>
+                {% for a in legal_matches %}
+                <li><strong>{{ a.name }}</strong> is with the attorneys (R&nbsp;{{ a.total|floatformat:2|intcomma }}){% if a.matter_id %} &mdash; <a href="{% url 'xero_legal_matter' a.matter_id %}">open the matter</a>{% endif %}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+        <a href="{% url 'xero_legal' %}">Lawyers page &rarr;</a>
+    </div>
+    {% endif %}
+
     <div class="databox">
         <strong>Data window:</strong>
         {% if earliest_invoice_date %}
@@ -999,6 +1055,16 @@ document.addEventListener('click', function (e) {
             </div>
         </div>
         {% endif %}
+        {% if categories %}
+        <label style="font-size:12px; font-weight:600; color:var(--text-muted);">Category:</label>
+        <select name="category" class="form-control" style="width:auto;" onchange="this.form.submit()">
+            <option value="">All categories</option>
+            {% for c in categories %}
+            <option value="{{ c.id }}"{% if selected_category == c.id|stringformat:'s' %} selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+            <option value="none"{% if selected_category == 'none' %} selected{% endif %}>&mdash; Uncategorised &mdash;</option>
+        </select>
+        {% endif %}
         {% if selected_bucket %}<input type="hidden" name="bucket" value="{{ selected_bucket }}">{% endif %}
         {% if selected_stage %}<input type="hidden" name="stage" value="{{ selected_stage }}">{% endif %}
         {% if not admins and view_admin_id %}<input type="hidden" name="admin" value="{{ view_admin_id }}">{% endif %}
@@ -1030,13 +1096,13 @@ document.addEventListener('click', function (e) {
 
     <div class="summary">
         {% for b in bucket_summary %}
-        <a class="tile{% if b.label == selected_bucket %} active{% endif %}" href="{{ request.path }}?bucket={{ b.label|urlencode }}{% if selected_stage %}&amp;stage={{ selected_stage }}{% endif %}{% if view_admin_id %}&amp;admin={{ view_admin_id }}{% endif %}{{ project_query }}">
+        <a class="tile{% if b.label == selected_bucket %} active{% endif %}" href="{{ request.path }}?bucket={{ b.label|urlencode }}{% if selected_stage %}&amp;stage={{ selected_stage }}{% endif %}{% if view_admin_id %}&amp;admin={{ view_admin_id }}{% endif %}{{ project_query }}{{ category_query }}">
             <div class="label">{{ b.label }}</div>
             <div class="amount">R&nbsp;{{ b.amount|floatformat:2|intcomma }}</div>
             <div class="meta">{{ b.count }} inv &middot; {{ b.pct|floatformat:1 }}%</div>
         </a>
         {% endfor %}
-        <a class="tile total{% if not selected_bucket %} active{% endif %}" href="{{ request.path }}?{% if selected_stage %}stage={{ selected_stage }}&amp;{% endif %}{% if view_admin_id %}admin={{ view_admin_id }}&amp;{% endif %}{{ project_query_bare }}">
+        <a class="tile total{% if not selected_bucket %} active{% endif %}" href="{{ request.path }}?{% if selected_stage %}stage={{ selected_stage }}&amp;{% endif %}{% if view_admin_id %}admin={{ view_admin_id }}&amp;{% endif %}{{ project_query_bare }}{{ category_query }}">
             <div class="label">Total Outstanding</div>
             <div class="amount">R&nbsp;{{ grand_total|floatformat:2|intcomma }}</div>
             <div class="meta">across {{ debtor_count }} debtor{{ debtor_count|pluralize }}</div>
@@ -1067,6 +1133,28 @@ document.addEventListener('click', function (e) {
                     {% if d.email %}<div class="email">{{ d.email }}</div>{% endif %}
                     <div class="debtor-meta">
                     {% if d.project_code %}<div class="proj-line"><span class="alloc-label">Project:</span> {{ d.project_code }}</div>{% endif %}
+                    <div class="alloc-line" onclick="event.stopPropagation();">
+                        <span class="alloc-label">Category:</span>
+                        {% if can_categorise %}
+                        <form method="post" action="{% url 'xero_debtor_category' %}" class="alloc-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="contact_id" value="{{ d.cid }}">
+                            <input type="hidden" name="contact_name" value="{{ d.name }}">
+                            <input type="hidden" name="next" value="{{ current_full_path }}">
+                            <select name="category" class="alloc-select" onchange="categoriseDebtor(this)"
+                                    title="Automatic = matched on the debtor's name / project codes">
+                                <option value="">Automatic</option>
+                                {% for c in categories %}
+                                <option value="{{ c.id }}"{% if d.category_source == 'manual' and c.id == d.category_id %} selected{% endif %}>{{ c.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <span class="cat-hint">{% if d.category_source == 'auto' %}(auto: {{ d.category_name }}){% elif not d.category_source %}(uncategorised){% endif %}</span>
+                            <span class="alloc-status" aria-live="polite"></span>
+                        </form>
+                        {% else %}
+                        <span class="cat-chip{% if not d.category_id %} none{% endif %}">{{ d.category_name }}</span>
+                        {% endif %}
+                    </div>
                     <div class="alloc-line" onclick="event.stopPropagation();">
                         <span class="alloc-label">Allocated to:</span>
                         {% if can_allocate %}

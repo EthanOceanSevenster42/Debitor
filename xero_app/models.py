@@ -166,6 +166,57 @@ class DebtorAllocation(models.Model):
         return f"{self.contact_name or self.contact_id} -> {self.administrator}"
 
 
+class DebtorCategory(models.Model):
+    """A kind of debtor — abattoir, corporate store, individual store, training
+    account and so on — so the book can be reported on by the type of client
+    rather than only by who is chasing it.
+
+    The list is managed by a Super Admin. A debtor is placed in a category by
+    hand (DebtorClassification), or, failing that, automatically when its name
+    or one of its invoices' project codes contains one of the category's
+    keywords, so most of an existing book sorts itself on the first day.
+    """
+    name = models.CharField(max_length=120, unique=True)
+    # Comma-separated, case-insensitive. Matched against the debtor's name and
+    # its open invoices' project codes. Blank = never matched automatically.
+    keywords = models.CharField(max_length=255, blank=True, default="")
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def keyword_list(self):
+        return [k.strip().lower() for k in (self.keywords or "").split(",") if k.strip()]
+
+
+class DebtorClassification(models.Model):
+    """A debtor placed in a category by hand. Outranks the keyword match.
+
+    Keyed by the same debtor id the listing pages group on (contact_id, or the
+    contact name when no id is present), in its own table so it survives the
+    hourly snapshot rebuild."""
+    tenant_id = models.CharField(max_length=64, db_index=True)
+    contact_id = models.CharField(max_length=255)
+    contact_name = models.CharField(max_length=255, blank=True)
+    category = models.ForeignKey(DebtorCategory, on_delete=models.CASCADE,
+                                 related_name="classifications")
+    set_by = models.CharField(max_length=255, blank=True)
+    set_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("tenant_id", "contact_id")]
+
+    def __str__(self):
+        return f"{self.contact_name or self.contact_id}: {self.category}"
+
+
 class HandoverReturn(models.Model):
     """One invoice deliberately taken back OUT of handover.
 
@@ -333,6 +384,10 @@ class WriteOffInvoice(models.Model):
     contact_name = models.CharField(max_length=255, blank=True)
     written_off_by = models.CharField(max_length=255, blank=True)
     written_off_at = models.DateTimeField(auto_now_add=True)
+    # What was still owed on the invoice when it was written off, so reports can
+    # value the write-offs in a period. Zero on rows older than this field whose
+    # invoice had already left the open list when it was added.
+    amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     # Ticked (Super Admin only) once the matching credit note has been issued
     # in Xero for this written-off invoice.
     credit_note_issued = models.BooleanField(default=False)
@@ -981,6 +1036,16 @@ class RecoveredInvoice(models.Model):
         related_name="recoveries",
     )
     administrator_name = models.CharField(max_length=255, blank=True)
+    # Whoever the debtor was allocated to when the money came in, credited or not.
+    # `administrator` above is only set when the payment counts as THEIR
+    # collection; this is what reports use to total the money received against
+    # each clerk's portfolio. Rows older than this field were back-filled from the
+    # allocation as it stood when the field was added.
+    allocated_admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="portfolio_recoveries",
+    )
+    allocated_admin_name = models.CharField(max_length=255, blank=True, default="")
     reason = models.CharField(max_length=20, choices=REASON_CHOICES, default=REASON_COLLECTED)
     days_past_due = models.IntegerField(default=0)
     recovered_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -993,3 +1058,57 @@ class RecoveredInvoice(models.Model):
 
     def __str__(self):
         return f"{self.invoice_number or self.invoice_id}: {self.amount}"
+
+
+class PortfolioSnapshot(models.Model):
+    """One debtor's open balance at the end of one day, split by where it sits.
+
+    The open-invoice snapshot is rebuilt every sync, so on its own it can only
+    say what is owed now. These rows keep the history the reports need: the
+    opening and closing balance of a period, how the ageing moved, and how a
+    clerk's book grew or shrank. Written by each sync (today's rows are replaced,
+    so they reflect the day's last sync) and on demand by the reports page.
+
+    One row per debtor per STATUS, because a debtor can be split — an invoice
+    taken back out of handover sits in active collections while the rest of the
+    client stays in handover. The clerk is the allocation on that day, so
+    re-allocating a debtor does not rewrite who held it before.
+    """
+    STATUS_ACTIVE = "active"
+    STATUS_HANDOVER = "handover"
+    STATUS_LEGAL = "legal"
+    STATUS_CLOSED = "closed"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active collections"),
+        (STATUS_HANDOVER, "Handover"),
+        (STATUS_LEGAL, "With attorneys"),
+        (STATUS_CLOSED, "Closed"),
+    ]
+
+    tenant_id = models.CharField(max_length=64)
+    day = models.DateField()
+    contact_id = models.CharField(max_length=255)
+    contact_name = models.CharField(max_length=255, blank=True)
+    administrator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="portfolio_snapshots",
+    )
+    administrator_name = models.CharField(max_length=255, blank=True, default="")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    invoice_count = models.IntegerField(default=0)
+    not_due = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    b0_30 = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    b31_60 = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    b61_90 = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    b91_120 = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    b120_plus = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    max_days_past_due = models.IntegerField(default=0)
+    captured_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("tenant_id", "day", "contact_id", "status")]
+        indexes = [models.Index(fields=["tenant_id", "day"])]
+
+    def __str__(self):
+        return f"{self.day} {self.contact_name or self.contact_id} [{self.status}]: {self.total}"

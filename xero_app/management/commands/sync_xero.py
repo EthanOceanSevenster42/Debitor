@@ -31,6 +31,7 @@ from xero_app.xero_client import (fetch_open_invoices, iter_ar_invoices, fetch_c
                                   XeroDailyLimitError, XeroCallBudgetReached)
 from xero_app.views import _xero_hist_date, _is_email_event
 from xero_app import recovery
+from xero_app import portfolio
 
 # The full AR-invoice-history backfill (Invoice table) is disabled: the Debtors
 # listing that used it was removed, and the Debtors Action Page runs off the
@@ -194,6 +195,12 @@ class Command(BaseCommand):
                     self.stdout.write(f"[{connection.tenant_name}] {n} payment(s) recorded for recovery tracking")
             except Exception as e:  # recovery tracking must never break the sync
                 self.stderr.write(self.style.WARNING(f"[{connection.tenant_name}] recovery detection skipped: {e}"))
+            # Record where the book stands today (replacing any earlier capture
+            # today), so period reports have an opening and closing balance.
+            try:
+                portfolio.capture_snapshot(connection.tenant_id)
+            except Exception as e:  # reporting history must never break the sync
+                self.stderr.write(self.style.WARNING(f"[{connection.tenant_name}] portfolio snapshot skipped: {e}"))
 
             if SYNC_FULL_INVOICE_HISTORY:
                 invoice_total = self._sync_invoices(connection)

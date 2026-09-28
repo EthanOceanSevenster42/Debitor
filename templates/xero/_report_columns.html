@@ -1,0 +1,22 @@
+{% load humanize %}
+{% comment %}Single-series column chart (collected per period). One series, so
+the heading names it and there is no legend box. Every column has a hover
+title on a hit area wider than the bar; the table below carries the values.{% endcomment %}
+{% if chart.has_data %}
+<svg class="rpsvg" viewBox="0 0 {{ chart.width }} {{ chart.height }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="{{ aria }}">
+    {% for t in chart.yticks %}
+    <line class="grid" x1="{{ chart.plot_left }}" y1="{{ t.y }}" x2="{{ chart.plot_right }}" y2="{{ t.y }}"></line>
+    <text class="ytick" x="{{ chart.ylabel_x }}" y="{{ t.ty }}" text-anchor="end">{{ t.label }}</text>
+    {% endfor %}
+    {% for c in chart.cols %}
+    <g class="rp-col">
+        <rect class="hit" x="{{ c.hit_x }}" y="{{ chart.plot_top }}" width="{{ c.hit_w }}" height="{{ chart.hit_h }}" fill="transparent"></rect>
+        {% if c.path %}<path d="{{ c.path }}" fill="{{ colour }}"></path>{% endif %}
+        <title>{{ c.label }}: R {{ c.value|floatformat:2|intcomma }}</title>
+    </g>
+    <text class="xtick" x="{{ c.cx }}" y="{{ chart.label_y }}" text-anchor="middle">{{ c.short }}</text>
+    {% endfor %}
+</svg>
+{% else %}
+<p class="muted">Nothing {{ empty }} in these periods.</p>
+{% endif %}

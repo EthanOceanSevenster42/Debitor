@@ -66,6 +66,9 @@
             <li><a href="#filing">Filing &amp; documents</a></li>
             <li><a href="#lawyerreport">The weekly lawyer report &amp; alerts</a></li>
             <li><a href="#email">Email setup (invites, resets, reports)</a></li>
+            <li><a href="#performance">Performance reports</a></li>
+            <li><a href="#categories">Debtor categories</a></li>
+            <li><a href="#legalstatus">Accounts with the attorneys</a></li>
         </ol>
     </div>
 
@@ -192,6 +195,37 @@
         <li>The system sends email through a single company mailbox via Microsoft 365 (Microsoft Graph). This powers <strong>user invites</strong>, <strong>password resets</strong>, the <strong>weekly lawyer report</strong> and <strong>new-client alerts</strong>.</li>
         <li>Setup of the mailbox and credentials is a one-time technical task done by whoever deploys the system (see the deployment <code>README</code>). Once configured, all the email features above just work.</li>
         <li>Links inside those emails (e.g. "set your password", "open the matter") point at the live system address. If a link ever points at <code>localhost</code>, tell your system administrator — the server's <code>SITE_BASE_URL</code> needs updating.</li>
+    </ul>
+
+    <h2 id="performance">16. Performance reports</h2>
+    <p>Open <strong>Performance Reports</strong> in the sidebar. Super Admins see every debtor clerk; a clerk sees the same page for their own debtors only. The page answers six questions, in this order:</p>
+    <ol>
+        <li><strong>Who looks after what, and how much came in?</strong> &mdash; per clerk: how many debtors and how much they owe, split into <span class="tag teal">Being chased</span>, <span class="tag amber">Awaiting handover</span> and <span class="tag navy">With attorneys</span>; the money received, compared with the previous period; the clerk's own collections; write-offs; and the <strong>recovery rate</strong>. Underneath, whether they are keeping in touch with late debtors: how many were contacted, and the calls, WhatsApps, emails and notes they logged.</li>
+        <li><strong>How is each type of debtor doing?</strong> &mdash; the same figures per type of debtor (abattoirs, corporate stores, individual stores, training, &hellip;).</li>
+        <li><strong>Is the debt getting older?</strong> &mdash; how late the money is right now, a one-sentence summary of how the amount owed changed during the period, and which age groups grew or shrank.</li>
+        <li><strong>How does this compare with earlier periods?</strong> &mdash; money received and the amount owed for the last 12 weeks / months (8 quarters, 5 years).</li>
+        <li><strong>Which debtors need someone to act?</strong> &mdash; every debtor that needs attention now, with <em>why</em> it is there and <em>what to do next</em> (e.g. "No clerk assigned &rarr; Assign a clerk on the Debtors Action page"). Click a reason to see only those debtors.</li>
+        <li><strong>What is with the attorneys?</strong> &mdash; debtors handed over for collection, whose they were, how long they have been there, when anything last happened and what has been received.</li>
+    </ol>
+    <ul>
+        <li><strong>Choose the period</strong> at the top &mdash; Week, Month, Quarter, Year or your own dates &mdash; and use the arrows to go back or forward. Choose a <strong>clerk</strong> or a <strong>type of debtor</strong> to narrow everything down; "Show only this clerk / type" on each row does the same.</li>
+        <li>Hover over any column heading to see what it means. <strong>Export to Excel</strong> downloads the whole page, one sheet per section.</li>
+    </ul>
+    <div class="note"><strong>Recovery rate</strong>: of every R100 that could have been collected in the period, how much came in &mdash; money received &divide; (received + written off + still owed at the end). Balances before the day this feature went live show as <em>not recorded</em>; payments, write-offs and contact with debtors go back further.</div>
+
+    <h2 id="categories">17. Debtor categories</h2>
+    <ul>
+        <li>Open <strong>Debtor Categories</strong> (Admin section). The starting list is Abattoirs, Corporate stores, Individual stores, Training and Other &mdash; rename, reorder, add or retire categories as needed.</li>
+        <li>Each category can have <strong>keywords</strong>. A debtor whose name, or one of whose invoices' project codes, contains a keyword is placed in that category automatically (e.g. <code>abattoir</code>, <code>training</code>). The first matching category in the list wins.</li>
+        <li>A category <strong>set by hand</strong> always wins over the keywords. Set it on the Debtors Action page (the <em>Category</em> dropdown on each debtor) or in bulk on the Debtor Categories page: tick the debtors, choose the category, Apply. Choose <em>Automatic</em> to go back to the keyword match.</li>
+        <li>Use <em>Uncategorised only</em> on that page to find the debtors still to be placed. The Debtors Action page can also be filtered by category.</li>
+    </ul>
+
+    <h2 id="legalstatus">18. Accounts with the attorneys</h2>
+    <ul>
+        <li>Once a Super Admin <strong>approves</strong> a company for the lawyers, the whole client leaves the debtor clerk's <strong>Debtors Action Page</strong> &mdash; including invoices raised since &mdash; and no longer counts as their active workload on the Dashboard. A note at the top of the action page says how many of the clerk's accounts are with the attorneys, and a search for one of them links to its matter.</li>
+        <li>These accounts are monitored from the <strong>Lawyers</strong> page (which now shows the clerk and category on each matter) and the <em>With the attorneys</em> section of the Performance Reports.</li>
+        <li>When a matter is <strong>brought back</strong> from the lawyers, the client returns to normal management.</li>
     </ul>
 
     <div class="note" style="margin-top:24px;">Questions or changes needed? Note the exact page and what you expected, and pass it to your system administrator.</div>
