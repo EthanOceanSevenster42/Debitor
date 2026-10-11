@@ -35,9 +35,8 @@ class MatterUpdateNotificationTests(BookFixture):
         self.addCleanup(patcher.stop)
 
     def _emailed(self):
-        """Everyone the last email went to."""
-        kwargs = self.email.call_args.kwargs
-        return set(kwargs["bcc"])
+        """Everyone emailed so far - each person gets their own copy."""
+        return {addr for call in self.email.call_args_list for addr in call.kwargs["to"]}
 
     def _told(self, kind=DebtorNotice.KIND_MATTER_UPDATE):
         return set(DebtorNotice.objects.filter(kind=kind).values_list("recipient__email", flat=True))

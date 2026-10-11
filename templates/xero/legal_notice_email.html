@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;">
+<div style="font-family:Calibri,Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.5;color:#000000;max-width:680px;">
+<p style="margin:0 0 12pt;">{% if greeting_name %}Dear {{ greeting_name }},{% else %}Good day,{% endif %}</p>
+{% for para in paragraphs %}<p style="margin:0 0 12pt;">{{ para|safe }}</p>
+{% endfor %}{% if quote %}<p style="margin:0 0 4pt;">{{ quote_label|default:"Comment" }}:</p>
+<p style="margin:0 0 12pt 18pt;font-style:italic;">{{ quote|linebreaksbr }}</p>
+{% endif %}{% if documents %}<p style="margin:0 0 4pt;">Documents added:</p>
+<ul style="margin:0 0 12pt;padding-left:24pt;">{% for d in documents %}<li>{{ d }}</li>{% endfor %}</ul>
+{% endif %}<p style="margin:0 0 12pt;">{{ link_lead|default:"You can" }} <a href="{{ url }}" style="color:#0563C1;text-decoration:underline;">{{ link_text|default:"view the matter on the Debtor System" }}</a>.</p>
+<p style="margin:0;">Kind regards,</p>
+<p style="margin:0 0 18pt;">FSA Debtor System</p>
+<p style="margin:0;font-size:9pt;color:#7f7f7f;">This is an automated message from the FSA Debtor System. Please do not reply to this email.</p>
+</div>
+</body>
+</html>

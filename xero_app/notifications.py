@@ -11,6 +11,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.template.loader import render_to_string
+from django.utils.html import format_html
 from django.urls import reverse
 from django.utils import timezone
 
@@ -47,31 +48,21 @@ def notify_new_matter_approved(matter, approved_by=""):
     _raise_notices(matter, attorneys, DebtorNotice.KIND_NEW_MATTER, approved_by or matter.approved_by or "FSA",
                    f"New legal instruction: {matter.contact_name or matter.contact_id} has been handed "
                    f"over to the attorneys and needs attention.")
-    recipients = sorted(set(_lawyer_recipients()) | {u.email for u in attorneys if u.email})
-    if not recipients:
-        logger.info("New-matter approval for %s: no lawyer/recipient emails to notify.",
-                    matter.contact_name or matter.contact_id)
-        return 0
-
     name = matter.contact_name or matter.contact_id
-    ctx = {
-        "name": name,
-        "approved_by": approved_by or matter.approved_by or "",
-        "approved_at": matter.approved_at or timezone.now(),
-        "url": settings.SITE_BASE_URL + reverse("xero_legal_matter", args=[matter.id]),
-        "legal_url": settings.SITE_BASE_URL + reverse("xero_legal"),
-    }
-    subject = f"New client for the lawyers — {name} needs attention"
-    text_body = render_to_string("xero/new_matter_email.txt", ctx)
-    html_body = render_to_string("xero/new_matter_email.html", ctx)
-
-    to = [settings.MS_GRAPH_SENDER] if settings.MS_GRAPH_SENDER else [recipients[0]]
-    try:
-        return send_app_email(subject=subject, body=text_body, to=to,
-                              html_body=html_body, bcc=recipients)
-    except Exception:
-        logger.exception("Failed to send new-matter approval notification for %s", name)
+    who = approved_by or matter.approved_by or "FSA"
+    recipients = attorneys + _lawyer_recipients()
+    if not recipients:
+        logger.info("New-matter approval for %s: no lawyer/recipient emails to notify.", name)
         return 0
+    return _email(f"New legal instruction – {name}", {
+        "paragraphs": [
+            format_html("Please note that <strong>{}</strong> has been handed over to the attorneys for "
+                        "collection. The instruction was approved by {} on {} and is now ready for "
+                        "your attention.", name, who, _when(matter.approved_at or timezone.now())),
+            "The outstanding invoices and the full history of the account are available on the matter.",
+        ],
+        "url": _matter_url(matter), "link_text": "view the matter on the Debtor System",
+    }, recipients)
 
 
 # ---- Letter of Demand hand delivery ---------------------------------------------
@@ -97,16 +88,43 @@ def _raise_notices(matter, users, kind, actor_name, text):
         kind=kind, matter=matter, text=text) for u in users]
 
 
-def _email(subject, body, recipients):
-    recipients = sorted({e for e in recipients if e})
-    if not recipients:
-        return 0
-    to = [settings.MS_GRAPH_SENDER] if settings.MS_GRAPH_SENDER else [recipients[0]]
-    try:
-        return send_app_email(subject=subject, body=body, to=to, bcc=recipients)
-    except Exception:
-        logger.exception("Failed to send '%s'", subject)
-        return 0
+def _email(subject, ctx, recipients):
+    """Send a legal notice as an ordinary email - one per person, addressed to
+    them by first name - with a plain-text copy for mail apps that do not show
+    formatting.
+
+    ``recipients`` may mix users and bare email addresses (the lawyer-report
+    list); a bare address is greeted "Good day". ``ctx`` fills
+    templates/xero/legal_notice_email.*: paragraphs (escaped HTML), quote,
+    documents, url and the link wording. Returns how many were sent."""
+    people = {}
+    for r in recipients:
+        email = getattr(r, "email", r)
+        if email and (email not in people or not people[email]):
+            people[email] = getattr(r, "first_name", "") or ""
+    sent = 0
+    for email, first_name in sorted(people.items()):
+        personal = dict(ctx, greeting_name=first_name)
+        try:
+            sent += send_app_email(subject=subject,
+                                   body=render_to_string("xero/legal_notice_email.txt", personal),
+                                   html_body=render_to_string("xero/legal_notice_email.html", personal),
+                                   to=[email])
+        except Exception:
+            logger.exception("Failed to send '%s' to %s", subject, email)
+    return sent
+
+
+def _matter_url(matter):
+    return settings.SITE_BASE_URL + reverse("xero_legal_matter", args=[matter.id])
+
+
+def _when(dt):
+    """'1 October 2026'."""
+    if not dt:
+        return ""
+    local = timezone.localtime(dt)
+    return f"{local.day} {local:%B %Y}"
 
 
 def notify_lod_delivery_due(matter, now=None):
@@ -114,16 +132,25 @@ def notify_lod_delivery_due(matter, now=None):
     Sent once per matter; returns the notices raised."""
     from .models import DebtorNotice
     now = now or timezone.now()
+    from . import legal_workflow
     name = matter.contact_name or matter.contact_id
-    url = settings.SITE_BASE_URL + reverse("xero_legal_matter", args=[matter.id])
     staff = _fsa_staff()
     text = (f"The Letter of Demand to {name} was sent 7 days ago. Please arrange for an "
             f"FSA inspector to deliver it to the facility by hand and get a signed "
             f"acknowledgement of receipt, then upload it on the matter to complete the step.")
     notices = _raise_notices(matter, staff, DebtorNotice.KIND_LOD_DELIVERY_DUE,
                              "Legal workflow", text)
-    _email(f"Hand-deliver the Letter of Demand - {name}", f"{text}\n\nOpen the matter: {url}\n",
-           [u.email for u in staff])
+    sent = legal_workflow.lod_served_at(matter)
+    _email(f"Action required: hand delivery of the Letter of Demand \u2013 {name}", {
+        "paragraphs": [
+            format_html("The Letter of Demand to <strong>{}</strong> was sent on {}. As seven days have now "
+                        "passed, please arrange for an FSA inspector to deliver it to the facility by hand "
+                        "and to obtain a signed acknowledgement of receipt.", name, _when(sent)),
+            "Once it has been delivered, please upload the signed acknowledgement on the matter and "
+            "confirm the delivery. The step will remain open on the matter until this has been done.",
+        ],
+        "url": _matter_url(matter), "link_text": "view the matter on the Debtor System",
+    }, staff)
     matter.lod_delivery_notified_at = now
     matter.save(update_fields=["lod_delivery_notified_at"])
     return notices
@@ -153,13 +180,20 @@ def notify_lod_delivered(matter, by_user):
     from .models import DebtorNotice
     name = matter.contact_name or matter.contact_id
     who = by_user.get_full_name() or by_user.email
-    url = settings.SITE_BASE_URL + reverse("xero_legal_matter", args=[matter.id])
     text = (f"The Letter of Demand to {name} has been delivered by hand. {who} confirmed it "
             f"and uploaded the signed proof of delivery.")
     people = {u.id: u for u in _fsa_staff() + _legal_team() if u.id != by_user.id}
     notices = _raise_notices(matter, people.values(), DebtorNotice.KIND_LOD_DELIVERED, who, text)
-    _email(f"Letter of Demand delivered - {name}", f"{text}\n\nOpen the matter: {url}\n",
-           [u.email for u in people.values()] + _lawyer_recipients())
+    _email(f"Letter of Demand delivered \u2013 {name}", {
+        "paragraphs": [
+            format_html("Please note that the Letter of Demand to <strong>{}</strong> has been delivered to "
+                        "the facility by hand. {} confirmed the delivery on {} and uploaded the signed "
+                        "acknowledgement of receipt, which is now available on the matter.",
+                        name, who, _when(timezone.now())),
+        ],
+        "url": _matter_url(matter), "link_lead": "You can",
+        "link_text": "view the signed acknowledgement on the Debtor System",
+    }, list(people.values()) + _lawyer_recipients())
     return notices
 
 
@@ -191,7 +225,13 @@ def notify_matter_update(matter, actor, headline, detail="", files=()):
         lines += ["", "Documents:"] + [f"  - {f}" for f in files]
     text = "\n".join(lines)
     notices = _raise_notices(matter, people, DebtorNotice.KIND_MATTER_UPDATE, who, text)
-    url = settings.SITE_BASE_URL + reverse("xero_legal_matter", args=[matter.id])
-    _email(f"{name}: {headline} ({who})", f"Matter: {name}\n\n{text}\n\nOpen the matter: {url}\n",
-           [u.email for u in people])
+    _email(f"Update on the {name} matter", {
+        "paragraphs": [
+            format_html("Please note that {} {} on the <strong>{}</strong> matter on {}.",
+                        who, headline, name, _when(timezone.now())),
+        ],
+        "quote": detail, "quote_label": "Comment" if detail else "",
+        "documents": list(files),
+        "url": _matter_url(matter), "link_text": "view the matter on the Debtor System",
+    }, people)
     return notices

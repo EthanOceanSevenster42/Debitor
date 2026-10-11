@@ -1,0 +1,17 @@
+{% autoescape off %}{% if greeting_name %}Dear {{ greeting_name }},{% else %}Good day,{% endif %}
+
+{% for para in paragraphs %}{{ para|striptags }}
+
+{% endfor %}{% if quote %}{{ quote_label|default:"Comment" }}:
+    {{ quote }}
+
+{% endif %}{% if documents %}Documents added:
+{% for d in documents %}  - {{ d }}
+{% endfor %}
+{% endif %}{{ link_lead|default:"You can" }} {{ link_text|default:"view the matter on the Debtor System" }}: {{ url }}
+
+Kind regards,
+FSA Debtor System
+
+This is an automated message from the FSA Debtor System. Please do not reply to this email.
+{% endautoescape %}
