@@ -1,0 +1,15 @@
+{% extends "_status_page.html" %}
+{% block title %}Down for maintenance - FSA Debtor System{% endblock %}
+{# Check back by itself every minute, so the page clears as soon as we are done. #}
+{% block head %}<meta http-equiv="refresh" content="60">{% endblock %}
+{% block card %}
+<div class="status-icon" aria-hidden="true">&#128736;</div>
+<h1>We'll be back shortly</h1>
+<p>The Debtor System is being updated and is unavailable for a little while. Nothing has been lost &mdash; everything will be exactly as you left it.</p>
+{% if message %}<div class="status-note">{{ message }}</div>{% endif %}
+{% if until %}<p style="margin-top:14px;">Expected back by <strong>{{ until }}</strong>.</p>{% endif %}
+<p class="muted" style="font-size:13px; margin-top:14px;">This page checks again every minute and will open the system as soon as it is back.</p>
+<div class="status-actions">
+    <a class="btn-plain" href="/login/">Super Admin sign in</a>
+</div>
+{% endblock %}

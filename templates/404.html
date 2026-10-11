@@ -1,0 +1,11 @@
+{% extends "_status_page.html" %}
+{% block title %}Page not found - FSA Debtor System{% endblock %}
+{% block card %}
+<div class="status-code">404</div>
+<h1>We couldn't find that page</h1>
+<p>The link may be old, mistyped, or the page may have been moved. If you followed a link from an email, the item it pointed to may no longer exist.</p>
+<div class="status-actions">
+    <a class="auth-button" href="/">Go to my home page</a>
+    <button type="button" class="btn-plain" onclick="history.back()">&larr; Go back</button>
+</div>
+{% endblock %}

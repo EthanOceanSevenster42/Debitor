@@ -18,6 +18,9 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Maintenance mode is on while this file exists - see xero_app/maintenance.py.
+MAINTENANCE_FLAG = os.environ.get('MAINTENANCE_FLAG', str(BASE_DIR / 'maintenance.on'))
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
@@ -77,6 +80,9 @@ MIDDLEWARE = [
     'xero_app.middleware.XeroConnectionMiddleware',
     # Records every authenticated data-changing request to the Audit Log.
     'accounts.audit.AuditLogMiddleware',
+    # Shows the maintenance page to everyone but Super Admins while switched on
+    # (python manage.py maintenance on/off). After auth, so it knows who is asking.
+    'xero_app.maintenance.MaintenanceModeMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

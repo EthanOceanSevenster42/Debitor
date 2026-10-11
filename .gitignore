@@ -41,3 +41,6 @@ node_modules/
 
 # Playwright MCP scratch output (screenshots, console logs)
 .playwright-mcp/
+
+# Maintenance mode switch (python manage.py maintenance on/off)
+maintenance.on

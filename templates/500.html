@@ -1,0 +1,12 @@
+{% extends "_status_page.html" %}
+{% block title %}Something went wrong - FSA Debtor System{% endblock %}
+{% block card %}
+<div class="status-code">500</div>
+<h1>Something went wrong on our side</h1>
+<p>The system hit an unexpected problem and couldn't finish what you asked. Nothing you did caused it. Please try again in a moment.</p>
+<p>If it keeps happening, let your system administrator know which page you were on and what you clicked.</p>
+<div class="status-actions">
+    <a class="auth-button" href="/">Go to my home page</a>
+    <button type="button" class="btn-plain" onclick="location.reload()">Try again</button>
+</div>
+{% endblock %}

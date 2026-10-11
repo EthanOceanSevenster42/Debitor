@@ -1,0 +1,37 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}FSA Debtor System{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{% static 'img/favicon.png' %}">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}?v=10">
+    {% block head %}{% endblock %}
+    <style>
+        .status-card { text-align: center; max-width: 480px; }
+        .status-card .auth-logo { max-width: 170px; }
+        .status-code { font-size: 64px; line-height: 1; font-weight: 800; letter-spacing: -2px; margin: 6px 0 4px;
+                       color: var(--brand-teal); }
+        .status-icon { font-size: 46px; line-height: 1; margin: 8px 0 6px; }
+        .status-card h1 { font-size: 21px; color: var(--navy); margin: 6px 0 10px; }
+        .status-card p { color: #4b5563; font-size: 14.5px; line-height: 1.6; margin: 0 0 10px; }
+        .status-note { background: #f0fdfa; border: 1px solid #ccebe8; border-radius: 10px; padding: 10px 14px;
+                       color: #134e4a; font-size: 13.5px; margin: 14px 0 4px; }
+        .status-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
+        .status-actions .auth-button { width: auto; padding: 11px 22px; font-size: 15px; text-decoration: none; display: inline-block; }
+        .status-actions .btn-plain { padding: 11px 18px; border-radius: 8px; border: 1px solid var(--border); background: #fff;
+                                     color: var(--text-dark); font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; }
+        .status-actions .btn-plain:hover { background: #f3f4f6; text-decoration: none; }
+        .status-foot { margin-top: 22px; font-size: 12px; color: #9ca3af; }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card status-card">
+            <img src="{% static 'img/fsa-logo.png' %}" alt="Food Safety Agency" class="auth-logo">
+            {% block card %}{% endblock %}
+            <div class="status-foot">FSA Debtor System</div>
+        </div>
+    </div>
+</body>
+</html>
