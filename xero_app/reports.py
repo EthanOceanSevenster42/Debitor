@@ -39,6 +39,34 @@ def _last_activity(matter):
     return max(dates) if dates else matter.sent_at
 
 
+# A debtor has this long to respond once the Letter of Demand is served, so a
+# matter is not inactive while the attorneys are rightly waiting on them.
+LOD_GRACE_DAYS = 28
+lod_served_at = legal_workflow.lod_served_at
+
+
+def idle_days(matter, now, last=None):
+    """Days a matter has been inactive. Counting starts from its last activity,
+    but never before LOD_GRACE_DAYS after the Letter of Demand was served -
+    inside that window the matter reads 0 days inactive.
+
+    Returns (days, grace_until): grace_until is the date counting resumes while
+    the window is still open, else None."""
+    last = last or _last_activity(matter)
+    start = last
+    grace_until = None
+    served = lod_served_at(matter)
+    if served:
+        grace_end = served + timedelta(days=LOD_GRACE_DAYS)
+        if not start or grace_end > start:
+            start = grace_end
+        if grace_end > now:
+            grace_until = grace_end
+    if not start:
+        return 0, grace_until
+    return max(0, (now - start).days), grace_until
+
+
 def _severity(days_idle):
     if days_idle >= 14:
         return "critical"
@@ -85,7 +113,7 @@ def _matter_summary(matter, now, owed=Decimal(0)):
     done = len([k for k in visible if k in done_keys])
     total = len(visible)
     last = _last_activity(matter)
-    days_idle = (now - last).days if last else 0
+    days_idle, grace_until = idle_days(matter, now, last)
     in_litigation = bool(done_keys & _LITIGATION_KEYS)
     return {
         "id": matter.id,
@@ -108,6 +136,7 @@ def _matter_summary(matter, now, owed=Decimal(0)):
         "last_action": legal_workflow.last_action(matter),
         "last_worked": last,
         "days_idle": days_idle,
+        "lod_grace_until": grace_until,
         "severity": _severity(days_idle),
     }
 

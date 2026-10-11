@@ -36,6 +36,7 @@ urlpatterns = [
     path("legal/return/", views.xero_legal_return, name="xero_legal_return"),
     path("legal/<int:matter_id>/", views.xero_legal_matter, name="xero_legal_matter"),
     path("legal/<int:matter_id>/timeline/", views.xero_legal_timeline, name="xero_legal_timeline"),
+    path("legal/<int:matter_id>/client-info/", views.xero_legal_client_info, name="xero_legal_client_info"),
     path("legal/<int:matter_id>/opposed/", views.xero_legal_toggle_opposed, name="xero_legal_toggle_opposed"),
     path("legal/<int:matter_id>/step/", views.xero_legal_step_toggle, name="xero_legal_step_toggle"),
     path("legal/<int:matter_id>/comment/", views.xero_legal_step_comment, name="xero_legal_step_comment"),

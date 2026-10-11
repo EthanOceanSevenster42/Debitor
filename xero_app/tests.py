@@ -351,3 +351,50 @@ class RecordingTests(BookFixture):
                          {"invoice_id": "a1", "contact_id": "c-active", "reason": "Liquidated"},
                          HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(WriteOffInvoice.objects.get(invoice_id="a1").amount, Decimal("1000"))
+
+
+class LodGracePeriodTests(BookFixture):
+    """Inactive days only start counting 28 days after the Letter of Demand is served."""
+
+    def _serve_lod(self, days_ago, key="lod_email"):
+        from .models import LegalStep
+        LegalStep.objects.create(matter=self.matter, step_key=key, done=True,
+                                 done_at=timezone.now() - timedelta(days=days_ago))
+
+    def _quiet_since(self, days):
+        LegalMatter.objects.filter(id=self.matter.id).update(
+            sent_at=timezone.now() - timedelta(days=days),
+            approved_at=timezone.now() - timedelta(days=days))
+
+    def test_without_an_lod_days_count_from_the_last_activity(self):
+        from .reports import idle_days
+        self._quiet_since(20)
+        days, grace = idle_days(LegalMatter.objects.get(id=self.matter.id), timezone.now())
+        self.assertEqual((days, grace), (20, None))
+
+    def test_inside_the_28_days_the_matter_is_not_inactive(self):
+        from .reports import idle_days
+        self._quiet_since(40)
+        self._serve_lod(10)
+        days, grace = idle_days(LegalMatter.objects.get(id=self.matter.id), timezone.now())
+        self.assertEqual(days, 0)
+        self.assertEqual((grace - timezone.now()).days, 17)      # 18 days left, rounded down
+
+    def test_counting_starts_when_the_28_days_end(self):
+        from .reports import idle_days
+        self._quiet_since(60)
+        self._serve_lod(35, key="lod_sheriff")
+        days, grace = idle_days(LegalMatter.objects.get(id=self.matter.id), timezone.now())
+        self.assertEqual((days, grace), (7, None))
+
+    def test_the_attention_list_and_lawyers_page_respect_it(self):
+        self._quiet_since(40)
+        self._serve_lod(10)
+        self.client.force_login(self.boss)
+        report = self.client.get(reverse("xero_reports")).context["r"]
+        reasons = {e["cid"]: {k for k, _ in e["reasons"]} for e in report["escalations"]}
+        self.assertNotIn("legal_idle", reasons.get("c-legal", set()))
+        legal = self.client.get(reverse("xero_legal"))
+        card = next(m for m in legal.context["matters"] if m.id == self.matter.id)
+        self.assertEqual((card.days_idle, card.staleness), (0, ""))
+        self.assertIsNotNone(card.lod_grace_until)

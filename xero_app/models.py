@@ -109,8 +109,20 @@ class DebtorNotice(models.Model):
     KIND_COMMENT = "comment"
     KIND_REPLY = "reply"
     KIND_ALLOCATION = "allocation"
+    # Legal workflow: the Letter of Demand is due to be hand-delivered by an FSA
+    # inspector, and later, that it has been (with signed proof uploaded).
+    KIND_LOD_DELIVERY_DUE = "lod_delivery_due"
+    KIND_LOD_DELIVERED = "lod_delivered"
+    # A legal matter changed hands or moved on: a new instruction for the
+    # attorneys, or a comment / document / status change by either side.
+    KIND_NEW_MATTER = "new_matter"
+    KIND_MATTER_UPDATE = "matter_update"
     KIND_CHOICES = [(KIND_COMMENT, "Comment"), (KIND_REPLY, "Reply"),
-                    (KIND_ALLOCATION, "Allocation")]
+                    (KIND_ALLOCATION, "Allocation"),
+                    (KIND_LOD_DELIVERY_DUE, "LOD hand delivery due"),
+                    (KIND_LOD_DELIVERED, "LOD delivered"),
+                    (KIND_NEW_MATTER, "New legal instruction"),
+                    (KIND_MATTER_UPDATE, "Matter update")]
 
     tenant_id = models.CharField(max_length=64, db_index=True)
     recipient = models.ForeignKey(
@@ -129,6 +141,11 @@ class DebtorNotice(models.Model):
     # link existed — those still read fine from `text` alone.
     comment = models.ForeignKey(
         "DebtorComment", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="notices",
+    )
+    # The legal matter a workflow notice is about, so it can link straight to it.
+    matter = models.ForeignKey(
+        "LegalMatter", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="notices",
     )
     text = models.TextField(blank=True)
@@ -945,6 +962,9 @@ class LegalMatter(models.Model):
     approved_at = models.DateTimeField(null=True, blank=True)
     closed_by = models.CharField(max_length=255, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+    # When FSA was told the Letter of Demand is due for hand delivery by an
+    # inspector, so the alert goes out once rather than every hour.
+    lod_delivery_notified_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1112,3 +1132,45 @@ class PortfolioSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.day} {self.contact_name or self.contact_id} [{self.status}]: {self.total}"
+
+
+class LegalClientInfo(models.Model):
+    """The debtor's details the attorneys need for legal proceedings - who
+    exactly they are suing and where to serve them - kept with the matter.
+
+    Pre-filled from Xero where Xero has the detail (name, VAT number, addresses,
+    phone, email, contact person); the rest - registration and ID numbers,
+    directors, the domicilium address - is captured by FSA or the attorneys."""
+    ENTITY_CHOICES = [
+        ("company", "Company (Pty) Ltd / Ltd"),
+        ("cc", "Close corporation (CC)"),
+        ("sole_prop", "Sole proprietor"),
+        ("partnership", "Partnership"),
+        ("trust", "Trust"),
+        ("individual", "Individual"),
+        ("other", "Other"),
+    ]
+
+    matter = models.OneToOneField(LegalMatter, on_delete=models.CASCADE, related_name="client_info")
+    registered_name = models.CharField("Registered / legal name", max_length=255, blank=True, default="")
+    trading_name = models.CharField("Trading as", max_length=255, blank=True, default="")
+    entity_type = models.CharField("Type of entity", max_length=20, choices=ENTITY_CHOICES, blank=True, default="")
+    registration_number = models.CharField("Company / CC registration number", max_length=40, blank=True, default="")
+    id_number = models.CharField("ID number", max_length=20, blank=True, default="",
+                                 help_text="For an individual or sole proprietor.")
+    vat_number = models.CharField("VAT number", max_length=20, blank=True, default="")
+    directors = models.TextField("Directors / members / owners", blank=True, default="",
+                                 help_text="Full names, and ID numbers where known - one per line.")
+    domicilium_address = models.TextField("Domicilium / physical address for service", blank=True, default="")
+    postal_address = models.TextField("Postal address", blank=True, default="")
+    contact_person = models.CharField("Contact person", max_length=255, blank=True, default="")
+    contact_phone = models.CharField("Phone", max_length=60, blank=True, default="")
+    contact_email = models.CharField("Email", max_length=255, blank=True, default="")
+    notes = models.TextField("Other details for the proceedings", blank=True, default="",
+                             help_text="Anything else the attorneys may need - sureties, bank details, "
+                                       "previous names, related entities.")
+    updated_by = models.CharField(max_length=255, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Client details: {self.matter}"

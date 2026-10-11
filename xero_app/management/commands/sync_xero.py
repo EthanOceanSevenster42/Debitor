@@ -130,6 +130,15 @@ class Command(BaseCommand):
                             help="Run now, ignoring the configured schedule (used by the Refresh now button)")
 
     def handle(self, *args, **opts):
+        # Legal workflow alerts are database-only and due whenever they are due,
+        # so they run on every hourly firing - before the sync's own schedule gate.
+        try:
+            from xero_app import notifications
+            n = notifications.send_due_lod_delivery_reminders()
+            if n:
+                self.stdout.write(f"{n} Letter of Demand hand-delivery alert(s) sent")
+        except Exception as e:  # an alert must never stop the sync
+            self.stderr.write(self.style.WARNING(f"LOD hand-delivery alerts skipped: {e}"))
         # Honour the user-configured schedule. The Refresh now button passes
         # --force; the Windows Scheduled Task does not, so it skips out-of-window
         # firings cleanly without doing any Xero work.

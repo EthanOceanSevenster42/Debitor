@@ -65,6 +65,7 @@ FRIENDLY_LABELS = {
     'xero_legal_step_toggle': 'Ticked / unticked a legal step',
     'xero_legal_step_comment': 'Commented on a legal step',
     'xero_legal_toggle_opposed': 'Toggled Opposed/Unopposed',
+    'xero_legal_client_info': 'Updated legal client details',
     # Admin / settings
     'user_create': 'Created a user',
     'user_invite': 'Invited a user',

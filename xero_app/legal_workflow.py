@@ -12,6 +12,7 @@ and an ``is_variation`` flag for the comment-only "Variations" step at the end o
 each branch. Attorneys tick steps done and may comment on any step; they can also
 switch a matter between Unopposed and Opposed if the debtor changes strategy.
 """
+from datetime import timedelta
 
 TRACK_SUMMONS = "summons"
 TRACK_APPLICATION = "application"
@@ -24,6 +25,7 @@ COLLECTIONS = [
     ("draft_lod", "Draft LOD (Letter of Demand)", False),
     ("lod_email", "Service of LOD via Email", False),
     ("lod_sheriff", "Service of LOD via Sheriff", False),
+    ("lod_hand_delivery", "Physical delivery of LOD by an FSA inspector (signed acknowledgement of receipt)", False),
     ("default_listing_28", "After 28 days — proceed with default listing with credit bureaus (if no bona fide reason is provided to dispute payment)", False),
     ("debtor_listed", "Debtor listed as a default payer", False),
     ("issue_summons_or_application", "Issue summons where quantum justifies, alternatively launch application for payment (if no disputed facts)", False),
@@ -127,6 +129,36 @@ STEP_LABELS = {
     for t in group
 }
 STEP_LABELS["_route"] = "Route / defence"
+
+
+# The Letter of Demand counts as sent once it is served by email or sheriff.
+LOD_SERVED_KEYS = ("lod_email", "lod_sheriff")
+# Seven days after that, FSA arranges for an inspector to hand-deliver it and get
+# a signed acknowledgement of receipt. The step can only be completed with that
+# proof uploaded, and stays outstanding until it is.
+LOD_HAND_DELIVERY = "lod_hand_delivery"
+LOD_HAND_DELIVERY_AFTER_DAYS = 7
+
+
+def lod_served_at(matter):
+    """When the Letter of Demand was first served (email or sheriff), or None.
+    Reads matter.step_states with .all() so a prefetch is reused."""
+    dates = [s.done_at for s in matter.step_states.all()
+             if s.step_key in LOD_SERVED_KEYS and s.done and s.done_at]
+    return min(dates) if dates else None
+
+
+def lod_delivery_state(matter, now):
+    """Where the hand-delivery milestone stands for a matter:
+    {"due_at": datetime | None, "done": bool, "done_at", "outstanding": bool}.
+    outstanding is True once the due date has passed and it is not done."""
+    served = lod_served_at(matter)
+    done_state = next((s for s in matter.step_states.all()
+                       if s.step_key == LOD_HAND_DELIVERY and s.done), None)
+    due_at = served + timedelta(days=LOD_HAND_DELIVERY_AFTER_DAYS) if served else None
+    return {"due_at": due_at, "done": bool(done_state),
+            "done_at": done_state.done_at if done_state else None,
+            "outstanding": bool(due_at and not done_state and due_at <= now)}
 
 
 def step_section(step_key):

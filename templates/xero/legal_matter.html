@@ -20,20 +20,78 @@
     .sec-head form { margin-left: auto; }
     .branch-tag { font-size: 11.5px; font-weight: 700; color: #166534; background: #dcfce7; border: 1px solid #86efac; border-radius: 12px; padding: 1px 9px; vertical-align: middle; }
     .branch-tag.opp { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
-    .wf-step { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+    .wf-step { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; background: #fff; }
     .wf-step.done { background: #f6fdf9; border-color: #bbf7d0; }
-    .wf-step.variation { background: #fffaf0; border-color: #fde9c8; }
-    .ws-head { display: flex; align-items: flex-start; gap: 10px; }
-    .ws-check { margin-top: 2px; }
+    .wf-step.variation { background: #fffcf5; border-color: #fde9c8; }
+    .wf-step.late { border-color: #fdba74; box-shadow: inset 3px 0 0 #f97316; }
+    .ws-head { display: flex; align-items: center; gap: 12px; min-height: 30px; }
+    .ws-check { display: inline-flex; flex: 0 0 auto; margin: 0; }
+    .ws-check input[type=checkbox] { width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--brand-teal, #0E7C7B); }
+    .ws-check input[disabled] { cursor: not-allowed; }
+    .ws-check.ro { font-size: 17px; color: #64748b; }
+    .ws-num.var { display: inline-flex; align-items: center; justify-content: center; width: 18px; color: #b45309; font-size: 15px; }
+    .ws-title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
     .ws-label { font-size: 14px; color: #1f2937; font-weight: 600; }
-    .ws-done-meta { font-size: 11.5px; color: #16a34a; margin-left: 8px; font-weight: 600; }
-    .ws-var-tag { font-size: 11px; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 10px; padding: 1px 8px; margin-left: 8px; }
-    .ws-comments { margin: 8px 0 0 30px; }
-    .ws-comment { font-size: 13px; color: #334155; padding: 6px 0; border-top: 1px dashed #eef2f7; }
+    .ws-done-meta { font-size: 12px; color: #15803d; font-weight: 600; }
+    .ws-var-tag { font-size: 11px; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 10px; padding: 1px 8px; }
+    .ws-tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .ws-count { font-size: 12px; color: #64748b; font-weight: 600; }
+    .ws-add-btn { background: #fff; border: 1px solid #cbd5e1; color: #334155; border-radius: 16px; padding: 4px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .ws-add-btn:hover, .ws-add-btn[aria-expanded="true"] { border-color: var(--brand-teal, #0E7C7B); color: var(--brand-teal, #0E7C7B); }
+    .ws-body { margin: 8px 0 0 30px; }
+    .ws-comments { border-left: 2px solid #eef2f7; padding-left: 12px; }
+    .ws-comment { font-size: 13px; color: #334155; padding: 5px 0; }
+    .ws-comment + .ws-comment { border-top: 1px dashed #eef2f7; }
     .ws-comment .who { color: #64748b; font-size: 11.5px; }
-    .ws-add { margin: 8px 0 0 30px; display: flex; gap: 8px; align-items: flex-start; }
-    .ws-add textarea { flex: 1; min-height: 38px; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 13px; resize: vertical; }
+    .ws-comment .txt { margin-top: 2px; }
+    .ws-add { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; }
+    .ws-add textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 13px; resize: vertical; background: #fff; }
+    .ws-add-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 8px; }
+    .ws-file { font-size: 12.5px; color: #334155; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+    .ws-file input[type=file] { font-size: 12px; max-width: 230px; }
+    .ws-nature { flex: 0 1 300px; min-width: 180px; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+    .ws-add-actions { margin-left: auto; display: inline-flex; gap: 6px; }
     .muted-sm { color: #94a3b8; font-size: 12px; }
+    .lod-due { font-size: 12.5px; color: #334155; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 8px 11px; line-height: 1.5; }
+    .lod-due.late { background: #fff7ed; border-color: #fed7aa; color: #7c2d12; }
+    .lod-proof { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; }
+    .lod-proof label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: #475569; }
+    .lod-proof .lp-note { flex: 1; min-width: 240px; }
+    .lod-proof .lp-note input { padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 400; }
+    .lod-proof .lp-file input { font-size: 12px; font-weight: 400; }
+    .ws-att { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+    .ws-att a { font-size: 12px; color: #1e40af; text-decoration: none; }
+    .ws-att a:hover { text-decoration: underline; }
+    .ws-att .nat { color: #64748b; font-size: 11px; background: #f1f5f9; border-radius: 8px; padding: 0 6px; margin-left: 2px; }
+    @media (max-width: 720px) {
+        .ws-head { flex-wrap: wrap; }
+        .ws-tools { width: 100%; justify-content: flex-end; }
+        .ws-body { margin-left: 0; }
+    }
+    /* Client details for the proceedings */
+    .ci-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; margin: 14px 0; }
+    .ci-head { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; }
+    .ci-head h2 { font-size: 15px; color: var(--navy); margin: 0; }
+    .ci-meta { font-size: 12px; color: #94a3b8; }
+    .ci-edit-btn { margin-left: auto; }
+    .ci-empty { font-size: 13px; color: #64748b; margin: 8px 0 0; }
+    .ci-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 22px; margin: 12px 0 2px; }
+    .ci-grid .wide { grid-column: 1 / -1; }
+    .ci-grid dt { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; }
+    .ci-grid dd { margin: 2px 0 0; font-size: 13.5px; color: #1f2937; font-weight: 600; }
+    .ci-grid dd .sub { display: block; font-weight: 400; color: #475569; font-size: 12.5px; }
+    .ci-form { margin-top: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; }
+    .ci-note { font-size: 12.5px; color: #0f766e; margin: 0 0 10px; }
+    .ci-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 16px; }
+    .ci-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: #475569; }
+    .ci-field.wide { grid-column: span 2; }
+    .ci-field .form-control { font-weight: 400; font-size: 13px; padding: 7px 9px; }
+    .ci-field textarea.form-control { resize: vertical; font-family: inherit; }
+    .ci-field em { font-style: normal; font-weight: 400; font-size: 11.5px; color: #94a3b8; }
+    .ci-field em.err { color: #b91c1c; font-weight: 600; }
+    .ci-field.bad .form-control { border-color: #f87171; }
+    .ci-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    @media (max-width: 720px) { .ci-field.wide { grid-column: auto; } }
     /* The company's outstanding invoices + their comments. */
     .inv-card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; margin: 14px 0; background: #fff; }
     .inv-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -54,9 +112,6 @@
     .inv-events .ev-date { color: #94a3b8; margin-right: 6px; }
     .inv-events .ev-action { font-weight: 600; }
     .inv-events .ev-user { color: #94a3b8; }
-    .ws-att { margin-top: 4px; }
-    .ws-att a { display: inline-block; margin-right: 10px; font-size: 12px; color: #1e40af; text-decoration: none; }
-    .ws-att a:hover { text-decoration: underline; }
     /* Horizontal milestone timeline (always visible) */
     .tl-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; margin: 14px 0; }
     .tl-card > h2 { font-size: 15px; color: var(--navy); margin: 0 0 4px; }
@@ -77,6 +132,28 @@
     .tlh-att a { font-size: 12px; text-decoration: none; margin-right: 4px; }
     .tlh-who { font-size: 10px; color: #94a3b8; margin-top: 3px; }
 </style>
+{% endblock %}
+{% block extra_body %}
+<script>
+// Show / hide the client-details form.
+function toggleClientForm() {
+    var form = document.getElementById('ci-form');
+    if (!form) return;
+    if (form.hasAttribute('hidden')) { form.removeAttribute('hidden'); var f = form.querySelector('input, select, textarea'); if (f) f.focus(); }
+    else form.setAttribute('hidden', '');
+}
+// Open / close a step's comment form. The button in the step header and the
+// form's own Cancel both land here.
+function toggleAdd(btn) {
+    var step = btn.closest('.wf-step');
+    var form = step.querySelector('form.ws-add');
+    var head = step.querySelector('.ws-add-btn');
+    var open = form.hasAttribute('hidden');
+    if (open) { form.removeAttribute('hidden'); form.querySelector('textarea').focus(); }
+    else { form.setAttribute('hidden', ''); }
+    if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+</script>
 {% endblock %}
 {% block content %}
 <div class="page-card">
@@ -107,6 +184,50 @@
     </div>
 
     {# ---- The company's outstanding invoices + their comments (moved over with the handover) ---- #}
+    {# ---- Client details for the proceedings ---- #}
+    <div class="ci-card" id="client-info">
+        <div class="ci-head">
+            <h2>Client details for legal proceedings</h2>
+            {% if client_info %}<span class="ci-meta">Last updated by {{ client_info.updated_by|default:"&mdash;" }} &middot; {{ client_info.updated_at|date:"j M Y, H:i" }}</span>{% endif %}
+            {% if can_edit_client %}<button type="button" class="ws-add-btn ci-edit-btn" onclick="toggleClientForm()">{% if client_info %}&#9998; Edit details{% else %}+ Capture details{% endif %}</button>{% endif %}
+        </div>
+        {% if client_info %}
+        <dl class="ci-grid">
+            <div><dt>Registered / legal name</dt><dd>{{ client_info.registered_name|default:"&mdash;" }}{% if client_info.trading_name %}<span class="sub">t/a {{ client_info.trading_name }}</span>{% endif %}</dd></div>
+            <div><dt>Type of entity</dt><dd>{{ client_info.get_entity_type_display|default:"&mdash;" }}</dd></div>
+            <div><dt>Registration number</dt><dd>{{ client_info.registration_number|default:"&mdash;" }}</dd></div>
+            <div><dt>ID number</dt><dd>{{ client_info.id_number|default:"&mdash;" }}</dd></div>
+            <div><dt>VAT number</dt><dd>{{ client_info.vat_number|default:"&mdash;" }}</dd></div>
+            <div><dt>Contact</dt><dd>{{ client_info.contact_person|default:"&mdash;" }}{% if client_info.contact_phone %}<span class="sub">{{ client_info.contact_phone }}</span>{% endif %}{% if client_info.contact_email %}<span class="sub">{{ client_info.contact_email }}</span>{% endif %}</dd></div>
+            <div class="wide"><dt>Directors / members / owners</dt><dd>{{ client_info.directors|default:"&mdash;"|linebreaksbr }}</dd></div>
+            <div><dt>Domicilium / address for service</dt><dd>{{ client_info.domicilium_address|default:"&mdash;"|linebreaksbr }}</dd></div>
+            <div><dt>Postal address</dt><dd>{{ client_info.postal_address|default:"&mdash;"|linebreaksbr }}</dd></div>
+            {% if client_info.notes %}<div class="wide"><dt>Other details</dt><dd>{{ client_info.notes|linebreaksbr }}</dd></div>{% endif %}
+        </dl>
+        {% else %}
+        <p class="ci-empty">Nothing captured yet &mdash; registration or ID numbers, directors and the address for service that the attorneys need for the proceedings.{% if can_edit_client %} Click <strong>Capture details</strong>; what Xero already knows is filled in for you.{% endif %}</p>
+        {% endif %}
+        {% if can_edit_client %}
+        <form method="post" action="{% url 'xero_legal_client_info' matter.id %}" class="ci-form" id="ci-form"{% if not client_form.errors %} hidden{% endif %}>
+            {% csrf_token %}
+            {% if not client_info %}<p class="ci-note">&#9432; Pre-filled from Xero where it had the detail &mdash; please check it before saving.</p>{% endif %}
+            <div class="ci-fields">
+                {% for f in client_fields %}
+                <label class="ci-field{% if f.name in 'directors domicilium_address postal_address notes' %} wide{% endif %}{% if f.errors %} bad{% endif %}">
+                    <span>{{ f.label }}</span>
+                    {{ f }}
+                    {% if f.errors %}<em class="err">{{ f.errors|join:" " }}</em>{% elif f.help_text %}<em>{{ f.help_text }}</em>{% endif %}
+                </label>
+                {% endfor %}
+            </div>
+            <div class="ci-actions">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleClientForm()">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Save client details</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+
     <div class="inv-card">
         <div class="inv-head">
             <button type="button" class="inv-toggle" onclick="document.getElementById('inv-body').classList.toggle('open'); this.classList.toggle('open');">
@@ -157,52 +278,83 @@
             {% endif %}
         </div>
         {% for st in sec.steps %}
-        <div class="wf-step {% if st.done %}done{% endif %} {% if st.is_variation %}variation{% endif %}">
+        <div class="wf-step {% if st.done %}done{% endif %} {% if st.is_variation %}variation{% endif %}{% if st.delivery.outstanding and not st.done %} late{% endif %}" id="step-{{ st.key }}">
             <div class="ws-head">
-                {% if not st.is_variation %}
-                    {% if can_work %}
+                {% if st.is_variation %}
+                    <span class="ws-num var" title="Comment section">&#9998;</span>
+                {% elif can_work and st.delivery and not st.done and not st.has_proof %}
+                    <span class="ws-check" title="Upload the signed proof of delivery below to complete this step"><input type="checkbox" disabled></span>
+                {% elif can_work %}
                     <form method="post" action="{% url 'xero_legal_step_toggle' matter.id %}" class="ws-check">
                         {% csrf_token %}
                         <input type="hidden" name="step_key" value="{{ st.key }}">
-                        <input type="checkbox" onchange="this.form.submit()" {% if st.done %}checked{% endif %}>
+                        <input type="checkbox" onchange="this.form.submit()" {% if st.done %}checked{% endif %} title="{% if st.done %}Mark as not done{% else %}Mark as done{% endif %}">
                     </form>
-                    {% else %}
-                    <span class="ws-check">{% if st.done %}&#9745;{% else %}&#9744;{% endif %}</span>
-                    {% endif %}
+                {% else %}
+                    <span class="ws-check ro">{% if st.done %}&#9745;{% else %}&#9744;{% endif %}</span>
                 {% endif %}
-                <div style="flex:1;">
+                <div class="ws-title">
                     <span class="ws-label">{{ st.label }}</span>
-                    {% if st.is_variation %}<span class="ws-var-tag">Comment section</span>{% endif %}
-                    {% if st.done and st.done_by %}<span class="ws-done-meta">&#10003; {{ st.done_by }}{% if st.done_at %} · {{ st.done_at|date:"Y-m-d H:i" }}{% endif %}</span>{% endif %}
-
-                    {% if st.comments %}
-                    <div class="ws-comments">
-                        {% for c in st.comments %}
-                        <div class="ws-comment">{{ c.text|linebreaksbr }}
-                            {% if c.attachments.all %}<div class="ws-att">{% for a in c.attachments.all %}<a href="{{ a.file.url }}" target="_blank" rel="noopener">&#128206; {{ a.original_name|default:"document" }}</a>{% endfor %}</div>{% endif %}
-                            <div class="who">&mdash; {{ c.author_name|default:"—" }} · {{ c.created_at|date:"Y-m-d H:i" }}</div></div>
-                        {% endfor %}
-                    </div>
-                    {% endif %}
-
+                    {% if st.is_variation %}<span class="ws-var-tag">Updates &amp; variations</span>{% endif %}
+                    {% if st.done and st.done_by %}<span class="ws-done-meta">&#10003; {{ st.done_by }}{% if st.done_at %} &middot; {{ st.done_at|date:"j M Y, H:i" }}{% endif %}</span>{% endif %}
+                </div>
+                <div class="ws-tools">
+                    {% if st.comments %}<span class="ws-count" title="{{ st.comments|length }} comment{{ st.comments|length|pluralize }}">&#128172; {{ st.comments|length }}</span>{% endif %}
                     {% if can_work %}
-                    <form method="post" action="{% url 'xero_legal_step_comment' matter.id %}" class="ws-add" enctype="multipart/form-data">
-                        {% csrf_token %}
-                        <input type="hidden" name="step_key" value="{{ st.key }}">
-                        <div style="flex:1;">
-                            <textarea name="text" placeholder="{% if st.is_variation %}Describe the variation / update…{% else %}Add a comment…{% endif %}"></textarea>
-                            <div style="margin-top:5px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
-                                <input type="file" name="documents" multiple title="Attach documents (pleadings, court orders, etc.)">
-                                <input type="text" name="nature" maxlength="120" placeholder="Nature of document (e.g. Summons, Court order)" style="flex:1; min-width:200px; padding:5px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px;">
-                            </div>
-                        </div>
-                        <button type="submit" class="btn btn-secondary btn-sm">Comment</button>
-                    </form>
-                    {% elif not st.comments %}
-                    <div class="muted-sm" style="margin-left:30px;">No comments.</div>
+                    <button type="button" class="ws-add-btn" onclick="toggleAdd(this)" aria-expanded="false">+ {% if st.is_variation %}Add update{% else %}Comment / document{% endif %}</button>
                     {% endif %}
                 </div>
             </div>
+
+            {% if st.delivery and not st.done %}
+            <div class="ws-body">
+                <div class="lod-due{% if st.delivery.outstanding %} late{% endif %}">
+                    {% if st.delivery.outstanding %}&#9888; <strong>Outstanding since {{ st.delivery.due_at|date:"j M Y" }}.</strong>
+                    {% elif st.delivery.due_at %}&#9203; Due on <strong>{{ st.delivery.due_at|date:"j M Y" }}</strong> (7 days after the Letter of Demand was sent).
+                    {% else %}Becomes due 7 days after the Letter of Demand is sent by email or sheriff.{% endif %}
+                    Arrange for an FSA inspector to deliver the Letter of Demand to the facility by hand and get a signed acknowledgement of receipt. This step stays open until the signed proof is uploaded.
+                </div>
+                {% if can_work %}
+                <form method="post" action="{% url 'xero_legal_step_comment' matter.id %}" class="lod-proof" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <input type="hidden" name="step_key" value="{{ st.key }}">
+                    <input type="hidden" name="confirm_delivery" value="1">
+                    <input type="hidden" name="nature" value="Signed proof of delivery">
+                    <label class="lp-file"><span>Signed proof of delivery</span><input type="file" name="documents" required></label>
+                    <label class="lp-note"><span>Note (optional)</span><input type="text" name="text" placeholder="e.g. delivered by inspector J. Smith, signed by the manager" maxlength="500"></label>
+                    <button type="submit" class="btn btn-primary btn-sm">&#10003; Upload proof &amp; confirm delivered</button>
+                </form>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if st.comments %}
+            <div class="ws-body ws-comments">
+                {% for c in st.comments %}
+                <div class="ws-comment">
+                    <div class="who"><strong>{{ c.author_name|default:"&mdash;" }}</strong> &middot; {{ c.created_at|date:"j M Y, H:i" }}</div>
+                    {% if c.text %}<div class="txt">{{ c.text|linebreaksbr }}</div>{% endif %}
+                    {% if c.attachments.all %}<div class="ws-att">{% for a in c.attachments.all %}<a href="{{ a.file.url }}" target="_blank" rel="noopener">&#128206; {{ a.original_name|default:"document" }}{% if a.nature %} <span class="nat">{{ a.nature }}</span>{% endif %}</a>{% endfor %}</div>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if can_work %}
+            <form method="post" action="{% url 'xero_legal_step_comment' matter.id %}" class="ws-body ws-add" enctype="multipart/form-data" hidden>
+                {% csrf_token %}
+                <input type="hidden" name="step_key" value="{{ st.key }}">
+                <textarea name="text" rows="2" placeholder="{% if st.is_variation %}Describe the variation or update&hellip;{% else %}Write a comment&hellip;{% endif %}"></textarea>
+                <div class="ws-add-row">
+                    <label class="ws-file">&#128206; Attach documents <input type="file" name="documents" multiple></label>
+                    <input type="text" name="nature" maxlength="120" class="ws-nature" placeholder="What is it? e.g. Summons, Court order">
+                    <span class="ws-add-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAdd(this)">Cancel</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                    </span>
+                </div>
+            </form>
+            {% endif %}
         </div>
         {% endfor %}
     </div>

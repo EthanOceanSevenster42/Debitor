@@ -12,6 +12,7 @@ from urllib.parse import urlencode, quote
 from datetime import datetime, date, timedelta
 
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
@@ -32,7 +33,7 @@ from .models import (XeroConnection, OpenInvoiceSnapshot, SyncRun, SyncSchedule,
                      EmailTemplate, MessageTemplate, SystemSetting, HandoverSetting,
                      LegalMatter, LegalStep, LegalStepComment, LegalStepCommentAttachment,
                      RecoveredInvoice, LawyerReportConfig, ReportRecipient, DebtorNotice,
-                     HandoverReturn,
+                     HandoverReturn, LegalClientInfo,
                      DebtorComment, DebtorCategory, DebtorClassification,
                      DEFAULT_WA_TEMPLATE, DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY)
 from . import legal_workflow
@@ -45,6 +46,7 @@ from . import notifications
 from . import wati
 from . import portfolio
 from . import performance
+from .forms import LegalClientInfoForm
 from accounts.audit import _log as _audit_log
 from accounts.decorators import super_admin_required, role_required
 from accounts.models import AuditLog, Role
@@ -2462,6 +2464,9 @@ def xero_legal_cancel(request):
         matter.closed_by = request.user.email
         matter.closed_at = timezone.now()
         matter.save()
+        if matter.approved_at:   # the attorneys only know about matters they were given
+            _log_notices_raised(request, notifications.notify_matter_update(
+                matter, request.user, "closed / withdrew the matter from the attorneys"))
         messages.success(request, f"{name} closed / withdrawn from the lawyers.")
     return redirect(request.POST.get("next") or "xero_legal")
 
@@ -2492,6 +2497,8 @@ def xero_legal_return(request):
             author_name=request.user.get_full_name() or request.user.email,
             text="Brought back from the lawyers — matter resolved." + (f" {note}" if note else ""),
         )
+        _log_notices_raised(request, notifications.notify_matter_update(
+            matter, request.user, "brought the matter back from the attorneys (closed)", detail=note))
         messages.success(request, f"{name} brought back from the lawyers and returned to normal management.")
     return redirect(request.POST.get("next") or "xero_legal")
 
@@ -2510,7 +2517,26 @@ def _legal_workflow_sections(matter):
             st["done_by"] = ss.done_by if ss else ""
             st["done_at"] = ss.done_at if ss else None
             st["comments"] = comments_by_step.get(st["key"], [])
+            if st["key"] == legal_workflow.LOD_HAND_DELIVERY:
+                st["delivery"] = legal_workflow.lod_delivery_state(matter, timezone.now())
+                st["has_proof"] = any(c.attachments.all() for c in st["comments"])
     return sections
+
+
+def _has_delivery_proof(matter):
+    """Whether signed proof of hand delivery has been uploaded on the matter."""
+    return LegalStepCommentAttachment.objects.filter(
+        comment__matter=matter, comment__step_key=legal_workflow.LOD_HAND_DELIVERY).exists()
+
+
+def _mark_lod_delivered(request, matter):
+    """Tick the hand-delivery step and tell FSA and the legal team."""
+    st, _ = LegalStep.objects.get_or_create(matter=matter, step_key=legal_workflow.LOD_HAND_DELIVERY)
+    st.done = True
+    st.done_by = request.user.get_full_name() or request.user.email
+    st.done_at = timezone.now()
+    st.save()
+    _log_notices_raised(request, notifications.notify_lod_delivered(matter, request.user))
 
 
 def _legal_timeline(matter):
@@ -2645,7 +2671,9 @@ def xero_legal(request):
         m.last_action = legal_workflow.last_action(m, timeline=full_timeline)
         # Staleness still reacts to ANY activity, including new comments.
         last = full_timeline[-1]["date"] if full_timeline else m.sent_at
-        m.days_idle = (now - last).days if last else 0
+        # Not counted until 28 days after the Letter of Demand was served.
+        m.days_idle, m.lod_grace_until = reports.idle_days(m, now, last)
+        m.lod_delivery = legal_workflow.lod_delivery_state(m, now)
         # Stale highlight applies to active matters being worked.
         if m.status == LegalMatter.ACTIVE and last:
             m.staleness = "stale" if m.days_idle >= 14 else ("warn" if m.days_idle >= 7 else "")
@@ -2707,9 +2735,11 @@ def xero_legal(request):
 
 
 @login_required
-def xero_legal_matter(request, matter_id):
+def xero_legal_matter(request, matter_id, client_form=None):
     """One matter's full LBINC workflow: route choice, Opposed/Unopposed toggle,
-    step checkboxes and per-step comments."""
+    step checkboxes and per-step comments - plus the client's details for the
+    proceedings. ``client_form`` is passed back in when a save failed, so the
+    page shows what was typed and what was wrong with it."""
     tenant_id = _current_tenant_id(request)
     if not tenant_id:
         return redirect("xero_login")
@@ -2743,8 +2773,16 @@ def xero_legal_matter(request, matter_id):
     # The milestone strip shows only workflow progress (completed steps + lifecycle
     # milestones); comments stay on their steps below and in the full report.
     milestones = [e for e in _legal_timeline(matter) if e["kind"] in ("step", "milestone")]
+    client_info = LegalClientInfo.objects.filter(matter=matter).first()
+    if client_form is None:
+        client_form = LegalClientInfoForm(
+            instance=client_info or LegalClientInfo(matter=matter, **_client_info_from_xero(tenant_id, matter)))
     return render(request, "xero/legal_matter.html", {
         "matter": matter,
+        "client_info": client_info,
+        "client_form": client_form,
+        "client_fields": [client_form[f] for f in client_form.fields],
+        "can_edit_client": _can_work_legal(request.user) or _can_manage_legal(request.user),
         "sections": _legal_workflow_sections(matter),
         "timeline": milestones,
         "tracks": legal_workflow.TRACKS,
@@ -2756,6 +2794,65 @@ def xero_legal_matter(request, matter_id):
         "company_invoice_count": len(company_invoices),
         "report_cid": matter.contact_id or matter.contact_name,
     })
+
+
+def _client_info_from_xero(tenant_id, matter):
+    """What Xero already knows about the debtor, to start the client details
+    with: name, VAT number, street and postal address, phone, email, contact."""
+    cid = matter.contact_id or matter.contact_name
+    cached = ContactDetail.objects.filter(tenant_id=tenant_id, contact_id=cid).first()
+    data = json.loads(cached.data_json or "{}") if cached else {}
+
+    def address(kind):
+        for a in data.get("addresses") or []:
+            if (a.get("type") or "").lower() == kind:
+                return "\n".join(a.get("lines") or [])
+        return ""
+
+    phones = data.get("phones") or []
+    person = next((p for p in data.get("contact_persons") or [] if p.get("name")), {})
+    vat = "".join(c for c in (data.get("tax_number") or "") if c.isdigit())
+    return {
+        "registered_name": data.get("name") or matter.contact_name or "",
+        "vat_number": vat if len(vat) == 10 else "",
+        "domicilium_address": address("street"),
+        "postal_address": address("pobox"),
+        "contact_phone": phones[0]["number"] if phones else "",
+        "contact_email": data.get("email") or person.get("email") or "",
+        "contact_person": person.get("name") or "",
+    }
+
+
+@login_required
+@require_POST
+def xero_legal_client_info(request, matter_id):
+    """Save the client's details for the proceedings, and tell the other side
+    which details changed."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first()
+    if not matter or not (_can_work_legal(request.user) or _can_manage_legal(request.user)):
+        messages.error(request, "You can't change the client details on this matter.")
+        return redirect("xero_legal")
+    existing = LegalClientInfo.objects.filter(matter=matter).first()
+    form = LegalClientInfoForm(request.POST, instance=existing or LegalClientInfo(matter=matter))
+    if not form.is_valid():
+        messages.error(request, "Some client details need correcting - see below.")
+        return xero_legal_matter(request, matter_id, client_form=form)
+    before = {f: getattr(existing, f) for f in form.fields} if existing else {}
+    info = form.save(commit=False)
+    info.updated_by = request.user.get_full_name() or request.user.email
+    info.save()
+    changed = [str(form.fields[f].label) for f in form.fields
+               if (getattr(info, f) or "") != (before.get(f) or "")]
+    if changed:
+        _log_notices_raised(request, notifications.notify_matter_update(
+            matter, request.user, "updated the client details", detail="Changed: " + ", ".join(changed)))
+        messages.success(request, "Client details saved.")
+    else:
+        messages.info(request, "Nothing changed.")
+    return redirect(reverse("xero_legal_matter", args=[matter.id]) + "#client-info")
 
 
 @login_required
@@ -2779,6 +2876,8 @@ def xero_legal_toggle_opposed(request, matter_id):
             author_name=request.user.get_full_name() or request.user.email,
             text=f"{label} changed to {'Opposed' if new_val else 'Unopposed'}.",
         )
+        _log_notices_raised(request, notifications.notify_matter_update(
+            matter, request.user, f"changed {label} to {'Opposed' if new_val else 'Unopposed'}"))
     return redirect("xero_legal_matter", matter_id=matter_id)
 
 
@@ -2793,10 +2892,22 @@ def xero_legal_step_toggle(request, matter_id):
     step_key = (request.POST.get("step_key") or "").strip()
     if matter and _can_work_legal(request.user) and step_key in legal_workflow.ALL_STEP_KEYS:
         st, _ = LegalStep.objects.get_or_create(matter=matter, step_key=step_key)
+        if step_key == legal_workflow.LOD_HAND_DELIVERY and not st.done:
+            # Only complete with the signed acknowledgement of receipt on file.
+            if not _has_delivery_proof(matter):
+                messages.error(request, "Upload the signed proof of delivery first - the step "
+                                        "is completed from the upload box under it.")
+                return redirect("xero_legal_matter", matter_id=matter_id)
+            _mark_lod_delivered(request, matter)
+            return redirect("xero_legal_matter", matter_id=matter_id)
         st.done = not st.done
         st.done_by = request.user.get_full_name() or request.user.email if st.done else ""
         st.done_at = timezone.now() if st.done else None
         st.save()
+        label = legal_workflow.STEP_LABELS.get(step_key, step_key)
+        _log_notices_raised(request, notifications.notify_matter_update(
+            matter, request.user,
+            f'marked "{label}" as done' if st.done else f'marked "{label}" as not done'))
     return redirect("xero_legal_matter", matter_id=matter_id)
 
 
@@ -2822,6 +2933,25 @@ def xero_legal_step_comment(request, matter_id):
         for f in files:
             LegalStepCommentAttachment.objects.create(
                 comment=comment, file=f, original_name=f.name[:255], nature=nature)
+        if (request.POST.get("confirm_delivery") and files
+                and step_key == legal_workflow.LOD_HAND_DELIVERY):
+            _mark_lod_delivered(request, matter)
+            messages.success(request, "Hand delivery confirmed - FSA and the legal team have been notified.")
+        else:
+            label = legal_workflow.STEP_LABELS.get(step_key, step_key)
+            n = len(files)
+            if n and text:
+                headline = f'added a comment and {n} document{"s" if n != 1 else ""} on "{label}"'
+            elif n:
+                headline = f'uploaded {n} document{"s" if n != 1 else ""} to "{label}"'
+            else:
+                headline = f'commented on "{label}"'
+            _log_notices_raised(request, notifications.notify_matter_update(
+                matter, request.user, headline, detail=text,
+                files=[f.name + (f" ({nature})" if nature else "") for f in files]))
+    elif (matter and request.POST.get("confirm_delivery")
+          and step_key == legal_workflow.LOD_HAND_DELIVERY and not files):
+        messages.error(request, "Attach the signed proof of delivery to confirm it.")
     return redirect("xero_legal_matter", matter_id=matter_id)
 
 
@@ -3152,7 +3282,7 @@ def xero_notifications(request):
         # it, but being handed a debtor is still worth answering.
         groups[-1]["rows"].append({
             "n": n, "thread": thread,
-            "open": bool(thread or (can_collect and n.contact_id)),
+            "open": bool(thread or n.matter_id or (can_collect and n.contact_id)),
         })
 
     return render(request, "xero/notifications.html", {

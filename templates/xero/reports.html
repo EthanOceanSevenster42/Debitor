@@ -526,7 +526,7 @@
                 <td class="num"><strong>R&nbsp;{{ e.total|floatformat:2|intcomma }}</strong>{% if e.overdue and e.overdue != e.total %}<span class="sm">R&nbsp;{{ e.overdue|floatformat:0|intcomma }} late</span>{% endif %}</td>
                 <td class="num">{{ e.max_dpd }} day{{ e.max_dpd|pluralize }}</td>
                 <td>{% if e.last_action %}{{ e.last_action|date:"j M Y" }} <span class="sm">{{ e.last_action|timesince }} ago</span>{% else %}<span class="muted">never</span>{% endif %}</td>
-                <td><ul class="todo">{% for why, step in e.steps %}<li><span class="why">{{ why }}</span> &rarr; {{ step }}</li>{% endfor %}</ul>{% if e.days_idle is not None and e.status == 'legal' %}<span class="sm">nothing has happened for {{ e.days_idle }} days</span>{% endif %}</td>
+                <td><ul class="todo">{% for why, step in e.steps %}<li><span class="why">{{ why }}</span> &rarr; {{ step }}</li>{% endfor %}</ul>{% if e.days_idle is not None and e.status == 'legal' %}<span class="sm">inactive for {{ e.days_idle }} days</span>{% endif %}</td>
             </tr>
             {% empty %}
             <tr><td colspan="8" class="muted">No debtors for this reason.</td></tr>
@@ -543,11 +543,11 @@
 {# ---- 6. with the attorneys ---- #}
 <div class="page-card rp-section" id="legal">
     <h2 class="mt-0"><span class="qn">6</span> &#9878; What is with the attorneys?</h2>
-    <div class="what">Debtors formally handed over to the attorneys for collection. They no longer appear on the clerks' pages, so this is where to keep an eye on them. <strong>Last activity</strong> turns red when nothing has happened for {{ legal_idle_days }} days or more.</div>
+    <div class="what">Debtors formally handed over to the attorneys for collection. They no longer appear on the clerks' pages, so this is where to keep an eye on them. <strong>Inactive</strong> turns red when nothing has happened for {{ legal_idle_days }} days or more. Days are not counted for the first 28 days after the Letter of Demand is served, while the debtor has time to respond.</div>
     {% if r.legal_rows %}
     <div class="rp-scroll">
     <table class="data-table">
-        <thead><tr><th>Debtor</th><th>Clerk</th><th>Type</th><th class="num">Owed</th><th class="num">Invoices</th><th>With the attorneys since</th><th class="num" title="The last step, comment or change on the matter">Last activity</th><th class="num">Received this {{ r.period.noun }}</th><th></th></tr></thead>
+        <thead><tr><th>Debtor</th><th>Clerk</th><th>Type</th><th class="num">Owed</th><th class="num">Invoices</th><th>With the attorneys since</th><th class="num" title="Days since the last step, comment or change on the matter - not counted for 28 days after the Letter of Demand is served">Inactive</th><th class="num">Received this {{ r.period.noun }}</th><th></th></tr></thead>
         <tbody>
             {% for x in r.legal_rows %}
             <tr>
@@ -557,7 +557,7 @@
                 <td class="num"><strong>R&nbsp;{{ x.total|floatformat:2|intcomma }}</strong></td>
                 <td class="num">{{ x.invoices }}</td>
                 <td>{% if x.approved_at %}{{ x.approved_at|date:"j M Y" }} <span class="sm">{{ x.days_with_attorneys }} day{{ x.days_with_attorneys|pluralize }} ago</span>{% else %}&mdash;{% endif %}</td>
-                <td class="num">{% if x.days_idle is not None %}{% if x.days_idle >= legal_idle_days %}<strong style="color:#b91c1c;">{{ x.days_idle }} days ago</strong>{% else %}{{ x.days_idle }} day{{ x.days_idle|pluralize }} ago{% endif %}{% else %}&mdash;{% endif %}</td>
+                <td class="num">{% if x.lod_grace_until %}<span style="color:#0f766e;">LOD served</span><span class="sm">counted from {{ x.lod_grace_until|date:"j M" }}</span>{% elif x.days_idle is not None %}{% if x.days_idle >= legal_idle_days %}<strong style="color:#b91c1c;">{{ x.days_idle }} days</strong>{% else %}{{ x.days_idle }} day{{ x.days_idle|pluralize }}{% endif %}{% else %}&mdash;{% endif %}{% if x.last_activity %}<span class="sm">last activity {{ x.last_activity|date:"j M" }}</span>{% endif %}</td>
                 <td class="num">{% if x.recovered %}R&nbsp;{{ x.recovered|floatformat:2|intcomma }}{% else %}<span class="dash">&mdash;</span>{% endif %}</td>
                 <td class="num" style="white-space:nowrap;">{% if x.matter_id %}<a href="{% url 'xero_legal_matter' x.matter_id %}">Open matter &rarr;</a>{% endif %}</td>
             </tr>

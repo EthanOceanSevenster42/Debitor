@@ -35,6 +35,10 @@
     .nt-kind { padding: 0 7px; border-radius: 9px; font-size: 10px; font-weight: 700; text-transform: uppercase;
         letter-spacing: .4px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; white-space: nowrap; }
     .nt-kind.reply { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
+    .nt-kind.lod_delivery_due { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+    .nt-kind.lod_delivered { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .nt-kind.new_matter { background: #ede9fe; color: #5b21b6; border-color: #ddd6fe; }
+    .nt-kind.matter_update { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
     .nt-kind.allocation { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
     .nt-state { flex: 0 0 auto; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
                 color: #cbd5e1; align-self: flex-start; }
@@ -226,9 +230,11 @@ function toggleNotice(btn) {
                     {% endfor %}
                 </div>
                 {% else %}
-                <div class="nt-text">{{ n.text }}</div>
+                <div class="nt-text">{{ n.text|linebreaksbr }}</div>
                 {% endif %}
-                {% if can_collect %}
+                {% if n.matter_id %}
+                <p style="margin:8px 0 0;"><a class="btn btn-primary btn-sm" href="{% url 'xero_legal_matter' n.matter_id %}">Open the matter &rarr;</a></p>
+                {% elif can_collect %}
                 {% comment %}With a thread the box answers into it; without one it
                 starts a note on the debtor, which reaches the sender the same
                 way any comment does.{% endcomment %}

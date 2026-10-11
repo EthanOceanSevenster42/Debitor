@@ -36,7 +36,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Max
 from django.utils import timezone
 
-from . import portfolio
+from . import legal_workflow, portfolio
 from .models import (CallLog, DebtorComment, HandoverInvoice, LegalMatter,
                      PortfolioSnapshot, RecoveredInvoice, WriteOffInvoice)
 from .portfolio import ACTIVE, HANDOVER, LEGAL, CLOSED, OPEN_STATUSES, BUCKETS, BUCKET_FIELDS
@@ -69,6 +69,7 @@ ESCALATION_REASONS = [
     ("handover_decision", "Waiting for a handover decision"),
     ("legal_pending", "Waiting for approval to go to the attorneys"),
     ("legal_idle", f"Attorneys quiet for {LEGAL_IDLE_DAYS}+ days"),
+    ("lod_delivery", "Letter of Demand not yet delivered by hand"),
 ]
 ESCALATION_LABELS = dict(ESCALATION_REASONS)
 # ...and what somebody should do about it.
@@ -80,6 +81,7 @@ ESCALATION_ACTIONS = {
     "handover_decision": "Super Admin: send to the attorneys, or bring back",
     "legal_pending": "Super Admin: approve it on the Lawyers page",
     "legal_idle": "Ask the attorneys for an update",
+    "lod_delivery": "Arrange an FSA inspector to deliver it and upload the signed receipt on the matter",
 }
 
 # Age bands as a person would say them.
@@ -906,7 +908,7 @@ def _matters_by_key(tenant_id):
 
 def _escalations(tenant_id, book, now):
     """Every open account that needs someone to act, with the reasons why."""
-    from .reports import _last_activity
+    from .reports import idle_days
 
     last_action = _last_actions(tenant_id)
     matters = _matters_by_key(tenant_id)
@@ -935,11 +937,12 @@ def _escalations(tenant_id, book, now):
             else:
                 reasons.append("handover_decision")
         elif p["status"] == LEGAL and matter:
-            last = _last_activity(matter)
-            idle = (now - last).days if last else 0
+            idle, _grace = idle_days(matter, now)
             extra["days_idle"] = idle
             if idle >= LEGAL_IDLE_DAYS:
                 reasons.append("legal_idle")
+            if legal_workflow.lod_delivery_state(matter, now)["outstanding"]:
+                reasons.append("lod_delivery")
         if not reasons:
             continue
         out.append({
@@ -961,7 +964,7 @@ def _escalations(tenant_id, book, now):
 
 def _legal_rows(tenant_id, book, now, scope, recoveries, period, in_period):
     """Accounts with the attorneys, for monitoring alongside the clerks' books."""
-    from .reports import _last_activity
+    from .reports import _last_activity, idle_days
 
     matters = _matters_by_key(tenant_id)
     recovered = defaultdict(Decimal)
@@ -976,13 +979,14 @@ def _legal_rows(tenant_id, book, now, scope, recoveries, period, in_period):
             continue
         m = matters.get(p["cid"])
         last = _last_activity(m) if m else None
+        idle, grace = idle_days(m, now, last) if m else (None, None)
         rows.append({
             "cid": p["cid"], "name": p["name"], "admin_name": p["admin_name"] or portfolio.UNALLOCATED,
             "category_name": p["category_name"], "total": p["total"], "invoices": p["invoice_count"],
             "max_dpd": p["max_dpd"], "matter_id": m.id if m else None,
             "approved_at": m.approved_at if m else None,
             "days_with_attorneys": (now - m.approved_at).days if m and m.approved_at else None,
-            "last_activity": last, "days_idle": (now - last).days if last else None,
+            "last_activity": last, "days_idle": idle, "lod_grace_until": grace,
             "recovered": recovered.get(p["cid"], Decimal(0)),
         })
     rows.sort(key=lambda r: r["total"], reverse=True)
