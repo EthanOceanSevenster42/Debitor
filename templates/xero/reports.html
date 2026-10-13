@@ -140,12 +140,12 @@
             <input type="hidden" name="period" value="{{ r.period.kind }}">
             <input type="hidden" name="d" value="{{ r.period.start|date:'Y-m-d' }}">
             {% endif %}
-            {% if is_super_admin %}
+            {% if clerks %}
             <label for="rp-clerk">Clerk</label>
             <select id="rp-clerk" name="clerk" class="form-control" onchange="this.form.submit()">
-                <option value="">All clerks</option>
+                {% if is_super_admin %}<option value="">All clerks</option>{% endif %}
                 {% for c in clerks %}<option value="{{ c.id }}"{% if scope_clerk == c.id|stringformat:'s' %} selected{% endif %}>{{ c.get_full_name|default:c.email }}</option>{% endfor %}
-                <option value="unallocated"{% if scope_clerk == 'unallocated' %} selected{% endif %}>&mdash; No clerk assigned &mdash;</option>
+                {% if is_super_admin %}<option value="unallocated"{% if scope_clerk == 'unallocated' %} selected{% endif %}>&mdash; No clerk assigned &mdash;</option>{% endif %}
             </select>
             {% endif %}
             <label for="rp-cat">Type of debtor</label>

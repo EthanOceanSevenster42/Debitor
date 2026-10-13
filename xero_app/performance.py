@@ -280,12 +280,13 @@ class Scope:
 
 
 def scope_from_request(params, user, category_ids):
-    """Administrators only ever see their own portfolio; Super Admins choose."""
+    """Administrators see their own portfolio - or that of a colleague they
+    cover (User.also_manages); Super Admins choose anyone."""
+    raw = (params.get("clerk") or "").strip()
     if user.is_super_admin:
-        raw = (params.get("clerk") or "").strip()
         clerk = "unallocated" if raw == "unallocated" else (int(raw) if raw.isdigit() else None)
     else:
-        clerk = user.id
+        clerk = int(raw) if raw.isdigit() and int(raw) in user.book_admin_ids() else user.id
     raw = (params.get("category") or "").strip()
     if raw == "none":
         category = "none"

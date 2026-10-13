@@ -9,7 +9,6 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import models
 from django.template.loader import render_to_string
 from django.utils.html import format_html
 from django.urls import reverse
@@ -73,9 +72,9 @@ def _fsa_staff():
 
 
 def _legal_team():
-    """The attorneys, plus anyone given working access to the Lawyers page."""
-    return list(User.objects.filter(is_active=True)
-                .filter(models.Q(role=Role.LAWYER) | models.Q(legal_access=True)))
+    """The attorneys. Somebody given working access to the Lawyers page is not
+    on the legal team: they can work matters but do not get the legal updates."""
+    return list(User.objects.filter(role=Role.LAWYER, is_active=True))
 
 
 def _raise_notices(matter, users, kind, actor_name, text):

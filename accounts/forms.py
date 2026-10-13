@@ -48,8 +48,9 @@ class UserInviteForm(StyledFormMixin, forms.ModelForm):
 class UserEditForm(StyledFormMixin, forms.ModelForm):
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'email', 'role', 'legal_access', 'is_active')
-        widgets = {'is_active': forms.CheckboxInput()}
+        fields = ('first_name', 'last_name', 'email', 'role', 'legal_access', 'also_manages', 'is_active')
+        widgets = {'is_active': forms.CheckboxInput(),
+                   'also_manages': forms.CheckboxSelectMultiple()}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -59,6 +60,12 @@ class UserEditForm(StyledFormMixin, forms.ModelForm):
         # checkboxes shouldn't get the text-input styling
         self.fields['is_active'].widget.attrs['class'] = ''
         self.fields['legal_access'].widget.attrs['class'] = ''
+        # Only people who hold a debtor book can be covered, and not oneself.
+        others = User.objects.filter(role__in=[Role.ADMINISTRATOR, Role.SUPER_ADMIN], is_active=True)
+        if self.instance.pk:
+            others = others.exclude(pk=self.instance.pk)
+        self.fields['also_manages'].queryset = others.order_by('first_name', 'last_name')
+        self.fields['also_manages'].widget.attrs['class'] = ''
 
 
 class AdminSetPasswordForm(StyledFormMixin, SetPasswordForm):

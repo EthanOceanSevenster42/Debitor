@@ -75,11 +75,11 @@
         </div>
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <a class="btn btn-secondary btn-sm" href="{% url 'xero_reports' %}{% if view_admin_id %}?clerk={{ view_admin_id }}{% endif %}">Performance reports &rarr;</a>
-        {% if is_super_admin %}
+        {% if admins %}
         <form method="get" style="display:flex; align-items:center; gap:8px;">
             <label style="font-size:13px; font-weight:600; color:var(--text-muted);">View administrator:</label>
             <select name="admin" class="form-control" style="width:auto;" onchange="this.form.submit()">
-                <option value="">— Whole system —</option>
+                <option value="">{% if is_super_admin %}— Whole system —{% else %}— All my debtors —{% endif %}</option>
                 {% for a in admins %}
                 <option value="{{ a.id }}"{% if view_admin_id == a.id|stringformat:'s' %} selected{% endif %}>{{ a.get_full_name|default:a.email }}</option>
                 {% endfor %}

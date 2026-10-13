@@ -65,6 +65,16 @@ def _can_allocate(user):
     return user.is_super_admin
 
 
+def _book_choices(user):
+    """Whose debtor books a person can pick between: every administrator for a
+    Super Admin; for anyone covering colleagues, themselves and those colleagues;
+    otherwise nothing to pick."""
+    if user.is_super_admin:
+        return list(_assignable_admins())
+    ids = user.book_admin_ids()
+    return list(User.objects.filter(id__in=ids).order_by("first_name", "last_name")) if len(ids) > 1 else []
+
+
 def _can_categorise(user):
     """Placing a debtor in a category, and managing the category list, decides
     how the book is reported on — a management action, like allocating."""
@@ -932,8 +942,15 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
             restrict_ids = None
             restrict_to_me = False
     else:
+        # An administrator works their own book plus any they have been given to
+        # cover (User.also_manages); ?admin=<id> narrows to one of those books.
         restrict_to_me = True
-        restrict_ids = {cid for cid, a in alloc_map.items() if a.id == request.user.id}
+        visible = request.user.book_admin_ids()
+        admin_param = (request.GET.get("admin") or "").strip()
+        if admin_param.isdigit() and int(admin_param) in visible and len(visible) > 1:
+            visible = {int(admin_param)}
+            view_admin = next((a for a in alloc_map.values() if a.id == int(admin_param)), None)
+        restrict_ids = {cid for cid, a in alloc_map.items() if a.id in visible}
     my_alloc_ids = restrict_ids or set()
     view_admin_label = (view_admin.get_full_name() or view_admin.email) if view_admin else ""
 
@@ -1279,7 +1296,8 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         "legal_accounts_count": len(legal_accounts),
         "legal_accounts_total": sum((a["total"] for a in legal_accounts), Decimal(0)),
         "legal_matches": legal_matches,
-        "view_admin_id": (request.GET.get("admin") or "").strip() if request.user.is_super_admin else "",
+        "view_admin_id": (request.GET.get("admin") or "").strip()
+                         if (request.user.is_super_admin or view_admin) else "",
         "view_admin_label": view_admin_label,
         "unallocated_only": unallocated_only,
         "admins": list(_assignable_admins()) if request.user.is_super_admin else [],
@@ -1308,7 +1326,7 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
         "can_collect": _can_collect(request.user),
         "last_run": last_run,
         "last_success": last_success,
-        "admins": list(_assignable_admins()),
+        "admins": _book_choices(request.user),
         "can_allocate": _can_allocate(request.user),
         "current_full_path": request.get_full_path(),
     }
@@ -4357,7 +4375,7 @@ def xero_reports(request):
     if request.GET.get("export") == "xlsx":
         return _report_xlsx(report, request)
 
-    scope_q = scope.query() if request.user.is_super_admin else (
+    scope_q = scope.query() if (request.user.is_super_admin or len(request.user.book_admin_ids()) > 1) else (
         {"category": str(scope.category)} if scope.category is not None else {})
 
     def qs(p, **extra):
@@ -4392,7 +4410,7 @@ def xero_reports(request):
         "clerk_label": clerk_label,
         "category_label": category_label,
         "categories": [c for c in categories if c.is_active],
-        "clerks": list(_assignable_admins()) if request.user.is_super_admin else [],
+        "clerks": _book_choices(request.user),
         "is_super_admin": request.user.is_super_admin,
         "can_categorise": _can_categorise(request.user),
         "no_contact_days": performance.NO_CONTACT_DAYS,
@@ -4850,16 +4868,22 @@ def xero_dashboard(request):
     admin_by_id = {a.administrator_id: a.administrator for a in allocs}
 
     # A super admin can drill into a specific administrator's workload via ?admin=<id>.
-    view_admin_id = (request.GET.get("admin") or "").strip() if is_super else ""
+    view_admin_id = (request.GET.get("admin") or "").strip()
     if is_super:
-        target_id = int(view_admin_id) if view_admin_id.isdigit() else None
+        target_ids = {int(view_admin_id)} if view_admin_id.isdigit() else set()
     else:
-        target_id = request.user.id
+        # Their own book plus any they cover; ?admin=<id> narrows to one of them.
+        target_ids = request.user.book_admin_ids()
+        if view_admin_id.isdigit() and int(view_admin_id) in target_ids and len(target_ids) > 1:
+            target_ids = {int(view_admin_id)}
+        else:
+            view_admin_id = ""
+    target_id = next(iter(target_ids)) if len(target_ids) == 1 else None
     view_admin_name = ""
-    if is_super and target_id:
-        u = admin_by_id.get(target_id)
+    if view_admin_id and target_id:
+        u = admin_by_id.get(target_id) or User.objects.filter(id=target_id).first()
         view_admin_name = (u.get_full_name() or u.email) if u else ""
-    my_cids = {a.contact_id for a in allocs if a.administrator_id == target_id} if target_id else set()
+    my_cids = {a.contact_id for a in allocs if a.administrator_id in target_ids}
 
     since = timezone.now() - timedelta(days=CALL_SUPPRESS_DAYS)
     recent_logs, ever_logs = _contact_log_sets(tenant_id, since)
@@ -5005,26 +5029,26 @@ def xero_dashboard(request):
     legal_qs = rec_qs.filter(reason=RecoveredInvoice.REASON_COLLECTED_LEGAL)
     # An administrator's recovered figures are their COLLECTIONS only (legal-stage
     # recoveries have no administrator, so this filter naturally excludes them).
-    my_recovered_total = _rec_sum(rec_qs.filter(administrator_id=target_id)) if target_id else Decimal(0)
-    my_recovered_month = _rec_sum(rec_qs.filter(administrator_id=target_id, recovered_at__gte=month_start)) if target_id else Decimal(0)
+    my_recovered_total = _rec_sum(rec_qs.filter(administrator_id__in=target_ids)) if target_ids else Decimal(0)
+    my_recovered_month = _rec_sum(rec_qs.filter(administrator_id__in=target_ids, recovered_at__gte=month_start)) if target_ids else Decimal(0)
 
     # Recovered-vs-outstanding month-over-month bar chart (red = outstanding by
     # invoice month, green = recovered in that calendar month).
-    my_rec_mom = _recovered_by_month(rec_qs.filter(administrator_id=target_id)) if target_id else {}
+    my_rec_mom = _recovered_by_month(rec_qs.filter(administrator_id__in=target_ids)) if target_ids else {}
     my_recovery_bars = _recovery_bars(my_mom, my_rec_mom)
 
     # Priority debtors for the viewed admin: biggest books, most overdue first.
     # Their active workload only - a client in handover is waiting on a decision.
     my_priority = sorted(
         (d for cid, d in debtor_acc.items() if cid in my_cids and not d["in_handover"]),
-        key=lambda d: (d["max_dpd"], d["total"]), reverse=True)[:8] if target_id else []
+        key=lambda d: (d["max_dpd"], d["total"]), reverse=True)[:8] if target_ids else []
 
     ctx = {
         "tenant_name": conn.tenant_name or "Unknown",
         "is_super_admin": is_super,
         "view_admin_id": view_admin_id,
         "view_admin_name": view_admin_name,
-        "admins": list(_assignable_admins()) if is_super else [],
+        "admins": list(_assignable_admins()) if is_super else _book_choices(request.user),
         "my_alloc_count": len(my_cids),
         "my_total": my_total,
         # The clerk's book split by where it sits. Handover and attorney

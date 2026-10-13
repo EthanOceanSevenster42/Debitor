@@ -58,6 +58,15 @@ class User(AbstractUser):
         default=False,
         help_text='Can work matters on the Lawyers page (in addition to their role).',
     )
+    # Per-user grant: this person may also see and work the debtors allocated to
+    # these administrators, as well as their own - e.g. someone who covers a
+    # colleague's book. Gives no other rights.
+    also_manages = models.ManyToManyField(
+        'self', symmetrical=False, blank=True, related_name='managed_by',
+        verbose_name='Can also manage the debtors of',
+        help_text="Tick the administrators whose debtors this person may also see and work, "
+                  "as well as their own.",
+    )
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
@@ -83,6 +92,11 @@ class User(AbstractUser):
     @property
     def is_lawyer(self):
         return self.role == Role.LAWYER
+
+    def book_admin_ids(self):
+        """The administrators whose debtors this person works: themselves plus
+        anyone they have been given to cover (also_manages)."""
+        return {self.id} | set(self.also_manages.values_list('id', flat=True))
 
     @property
     def is_pending_invite(self):
