@@ -3,224 +3,240 @@
 {% block title %}Lawyers - FSA Debtor System{% endblock %}
 {% block extra_head %}
 <style>
-    .lm-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 15px 18px 14px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(15,23,42,.05); }
-    .lm-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
-    .lm-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .lm-name { font-size: 16.5px; font-weight: 700; color: var(--navy); }
-    .lm-status { padding: 2px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 700; }
-    .lm-status.pending { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
-    .lm-status.active { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
-    .lm-status.closed { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-    .lm-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    /* Labelled facts instead of a row of same-looking pills. */
-    .lm-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 20px; margin: 12px 0 2px; }
-    .lm-fact { min-width: 0; }
-    .lm-fact.wide { grid-column: span 2; }
-    .lm-fact-k { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; color: #94a3b8; font-weight: 700; margin-bottom: 3px; }
-    .lm-fact-v { font-size: 15px; font-weight: 700; color: var(--navy); line-height: 1.2; }
-    .lm-fact-v.zero { color: #94a3b8; }
-    .lm-fact-sub { font-size: 11.5px; font-weight: 600; color: #64748b; margin-left: 6px; }
-    .lm-bar { height: 6px; background: #eef2f7; border-radius: 4px; overflow: hidden; margin-top: 6px; max-width: 260px; }
-    .lm-bar > span { display: block; height: 100%; background: var(--brand-teal, #0E7C7B); border-radius: 4px; }
-    .lm-rt { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
-    .rt-chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; white-space: nowrap; }
-    .rt-chip.opp { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
-    /* Provenance line, one labelled chip per lifecycle event. */
-    .lm-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: #6b7280; font-size: 11.5px; margin-top: 10px; padding-top: 9px; border-top: 1px solid #f1f5f9; }
-    .mt-k { font-weight: 700; color: #94a3b8; text-transform: uppercase; font-size: 9.5px; letter-spacing: .4px; margin-right: 3px; }
-    .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin: 18px 0 8px; }
-    .lk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr)); gap: 8px; margin: 6px 0 14px; }
-    .lk-tile { background: #f5fbfb; border: 1px solid #d6efee; border-radius: 8px; padding: 8px 10px; }
-    .lk-tile .lk-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .4px; color: #5a8a8a; font-weight: 700; line-height: 1.25; }
-    .lk-tile .lk-value { font-size: 17px; font-weight: 700; color: var(--navy); margin-top: 2px; line-height: 1.15; }
-    .lk-tile .lk-hint { font-size: 9.5px; color: #9ca3af; margin-top: 2px; line-height: 1.3; }
-    .lk-tile.teal { background: var(--brand-teal, #0E7C7B); border-color: var(--brand-teal, #0E7C7B); }
-    .lk-tile.teal .lk-label { color: #d6f1f0; } .lk-tile.teal .lk-value { color: #fff; }
-    .lk-tile.amber { background: #fff7ed; border-color: #fed7aa; } .lk-tile.amber .lk-label, .lk-tile.amber .lk-value { color: #9a3412; }
-    .lk-tile.warn { background: #fef9c3; border-color: #fde68a; } .lk-tile.warn .lk-label, .lk-tile.warn .lk-value { color: #854d0e; }
-    .lk-tile.green { background: #ecfdf5; border-color: #a7f3d0; } .lk-tile.green .lk-label, .lk-tile.green .lk-value { color: #047857; }
-    .lk-tile.red { background: #fef2f2; border-color: #fecaca; } .lk-tile.red .lk-label, .lk-tile.red .lk-value { color: #b91c1c; }
-    .lk-tile.slate { background: #f1f5f9; border-color: #cbd5e1; } .lk-tile.slate .lk-label, .lk-tile.slate .lk-value { color: #334155; }
-    .sec-total { float: right; font-size: 12px; font-weight: 700; color: #475569; text-transform: none; letter-spacing: 0; }
-    /* Stale-matter highlight (no activity for a while) */
-    .lm-card.warn { box-shadow: inset 3px 0 0 #f59e0b, 0 1px 4px rgba(15,23,42,.05); }
-    .lm-card.stale { box-shadow: inset 3px 0 0 #ef4444, 0 1px 4px rgba(15,23,42,.05); }
-    .idle-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 12px; }
-    .idle-badge.warn { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
-    .idle-badge.grace { white-space: nowrap; display: inline-block; background: #f0fdfa; color: #0f766e; border: 1px solid #99f6e4; }
-    .idle-badge.stale { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
-    /* "Last action" line - the most recent step the lawyers ticked */
-    .lm-last { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px; padding: 7px 11px; background: #f8fafc; border: 1px solid #e5e7eb; border-left: 3px solid #16a34a; border-radius: 6px; }
-    .lm-last.milestone { border-left-color: var(--brand-teal, #0E7C7B); }
-    .lm-last.none { border-left-color: #cbd5e1; }
-    .lm-last-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; }
-    .lm-last-title { font-size: 13px; font-weight: 600; color: #1f2937; }
-    .lm-last-who { font-size: 11.5px; color: #64748b; }
-    .lm-last-none { font-size: 12.5px; color: #94a3b8; }
-    /* Horizontal milestone timeline (always visible) */
-    .tlh-label { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; margin: 12px 0 2px; }
-    .tlh { display: flex; gap: 0; overflow-x: auto; padding: 14px 0 6px; }
-    .tlh-node { position: relative; flex: 0 0 auto; min-width: 150px; max-width: 170px; padding: 16px 10px 0; }
-    .tlh-node::before { content: ''; position: absolute; top: 6px; left: 0; right: 0; height: 2px; background: #e5e7eb; }
-    .tlh-node:first-child::before { left: 50%; }
-    .tlh-node:last-child::before { right: 50%; }
-    .tlh-dot { position: absolute; top: 1px; left: 50%; transform: translateX(-50%); width: 12px; height: 12px; border-radius: 50%; background: #cbd5e1; border: 2px solid #fff; z-index: 1; }
-    .tlh-node.milestone .tlh-dot { background: var(--brand-teal, #0E7C7B); }
-    .tlh-node.step .tlh-dot { background: #16a34a; }
-    .tlh-node.comment .tlh-dot { background: #2563eb; }
-    .tlh-node.route .tlh-dot { background: #d97706; }
-    .tlh-date { font-size: 10.5px; color: #94a3b8; font-weight: 700; }
-    .tlh-title { font-size: 12px; font-weight: 600; color: #1f2937; margin-top: 2px; line-height: 1.25; }
-    .tlh-detail { font-size: 11px; color: #64748b; margin-top: 2px; line-height: 1.2; }
-    .tlh-att { margin-top: 3px; }
-    .tlh-att a { font-size: 12px; text-decoration: none; margin-right: 4px; }
-    .tlh-who { font-size: 10px; color: #94a3b8; margin-top: 3px; }
-    @media (max-width: 720px) {
-        .lm-head { flex-direction: column; align-items: flex-start; gap: 9px; }
-        .lm-actions { width: 100%; }
-        .lm-facts { grid-template-columns: 1fr 1fr; }
-        .lm-fact.wide { grid-column: span 2; }
+    /* Headline numbers */
+    .lk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 8px 0 16px; }
+    .lk-tile { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 13px; }
+    .lk-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; font-weight: 700; }
+    .lk-value { font-size: 20px; font-weight: 800; color: var(--navy); margin-top: 2px; line-height: 1.15; }
+    .lk-hint { font-size: 11.5px; color: #64748b; margin-top: 2px; }
+    .lk-tile.red { background: #fef2f2; border-color: #fecaca; } .lk-tile.red .lk-value, .lk-tile.red .lk-label { color: #b91c1c; }
+    .lk-tile.green { background: #ecfdf5; border-color: #a7f3d0; } .lk-tile.green .lk-value, .lk-tile.green .lk-label { color: #047857; }
+    .lk-tile.warn { background: #fefce8; border-color: #fde68a; } .lk-tile.warn .lk-value, .lk-tile.warn .lk-label { color: #854d0e; }
+    a.lk-tile { text-decoration: none; display: block; }
+    a.lk-tile:hover { border-color: #f87171; }
+
+    /* Tabs - one per stage, each with its count and value */
+    .lt-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+    .lt-tab { display: flex; flex-direction: column; gap: 1px; min-width: 128px; padding: 8px 12px; border-radius: 10px; border: 1px solid #e2e8f0;
+              background: #fff; text-decoration: none; color: #334155; line-height: 1.2; }
+    .lt-tab:hover { border-color: var(--brand-teal, #0E7C7B); }
+    .lt-tab .t-label { font-size: 12.5px; font-weight: 700; }
+    .lt-tab .t-count { font-size: 19px; font-weight: 800; color: var(--navy); }
+    .lt-tab .t-total { font-size: 11px; color: #64748b; font-weight: 600; }
+    .lt-tab.zero .t-count, .lt-tab.zero .t-label { color: #94a3b8; }
+    .lt-tab.on { background: var(--brand-teal, #0E7C7B); border-color: var(--brand-teal, #0E7C7B); }
+    .lt-tab.on .t-label, .lt-tab.on .t-count, .lt-tab.on .t-total { color: #fff; }
+    .lt-tab.action { border-color: #fecaca; background: #fef2f2; }
+    .lt-tab.action .t-label, .lt-tab.action .t-count { color: #b91c1c; }
+    .lt-tab.action.on { background: #b91c1c; border-color: #b91c1c; }
+    .lt-tab.action.on .t-label, .lt-tab.action.on .t-count, .lt-tab.action.on .t-total { color: #fff; }
+
+    .lt-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .lt-hint { font-size: 13px; color: #475569; }
+    .lt-hint strong { color: var(--navy); }
+    .lt-search { padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; min-width: 230px; }
+
+    /* The matters list - everything needed without opening the file */
+    .lt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .lt-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; font-weight: 700;
+                   padding: 8px 10px; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+    .lt-table td { padding: 10px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+    .lt-table tr.needs td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+    .lt-table td:first-child { min-width: 190px; }
+    .lt-table tr:hover td { background: #fafcff; }
+    .lt-name { font-weight: 700; color: var(--navy); text-decoration: none; font-size: 14px; }
+    a.lt-name:hover { text-decoration: underline; }
+    .lt-sub { font-size: 11.5px; color: #64748b; margin-top: 2px; }
+    .lt-amt { font-weight: 700; color: #0f172a; white-space: nowrap; text-align: right; }
+    .lt-stage { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; white-space: nowrap;
+                background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+    .lt-stage.new { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .lt-stage.lod_issued { background: #f0fdfa; color: #0f766e; border-color: #99f6e4; }
+    .lt-stage.hand_delivered { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .lt-stage.no_trace { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+    .lt-stage.litigation { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+    .lt-stage.promise { background: #fefce8; color: #854d0e; border-color: #fde68a; }
+    .lt-stage.arrangement { background: #fdf4ff; color: #a21caf; border-color: #f5d0fe; }
+    .lt-stage.pending { background: #fef9c3; color: #854d0e; border-color: #fde68a; }
+    .lt-detail { color: #334155; margin-top: 4px; font-size: 12.5px; line-height: 1.4; }
+    .lt-actions { display: flex; flex-direction: column; gap: 4px; }
+    .lt-act { font-size: 12px; color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 3px 8px; line-height: 1.35; }
+    .lt-act .who { font-weight: 800; text-transform: uppercase; font-size: 9.5px; letter-spacing: .4px; margin-right: 4px; color: #b91c1c; }
+    .lt-none { color: #94a3b8; font-size: 12px; }
+    .lt-last { font-size: 12.5px; color: #1f2937; }
+    .lt-last .when { display: block; font-size: 11px; color: #64748b; }
+    .lt-go { white-space: nowrap; text-align: right; }
+    .lt-go form { display: inline; }
+    .lt-empty { padding: 26px 10px; text-align: center; color: #64748b; }
+    /* IMI / APS and attorney filters */
+    .lt-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 12px; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+    .lt-filters .f-label { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; font-weight: 700; }
+    .lt-seg { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
+    .lt-seg a { padding: 5px 12px; font-size: 12.5px; font-weight: 700; color: #334155; text-decoration: none; background: #fff; border-right: 1px solid #e2e8f0; }
+    .lt-seg a:last-child { border-right: 0; }
+    .lt-seg a.on { background: var(--navy, #1e3a5f); color: #fff; }
+    .lt-filters select { padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12.5px; }
+    .lt-diary { margin-left: auto; }
+    .lt-div { display: inline-block; font-size: 10px; font-weight: 800; padding: 0 6px; border-radius: 4px; letter-spacing: .3px; vertical-align: 1px; }
+    .lt-div.imi { background: #fee2e2; color: #991b1b; }
+    .lt-div.aps { background: #dbeafe; color: #1e40af; }
+    .lt-div.auto { opacity: .75; }
+    .lt-next { font-size: 12.5px; color: #1f2937; line-height: 1.35; }
+    .lt-next .who { font-weight: 800; text-transform: uppercase; font-size: 9.5px; letter-spacing: .4px; color: #475569; margin-right: 4px; }
+    .lt-due { display: block; font-size: 11px; color: #64748b; margin-top: 2px; font-weight: 600; }
+    .lt-due.late { color: #b91c1c; }
+    .lt-due.soon { color: #b45309; }
+    .lt-docs { font-size: 11px; color: #64748b; margin-left: 4px; white-space: nowrap; }
+    @media (max-width: 900px) {
+        .lt-table thead { display: none; }
+        .lt-table, .lt-table tbody, .lt-table tr, .lt-table td { display: block; width: 100%; box-sizing: border-box; }
+        .lt-table tr { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 10px; padding: 4px 0; }
+        .lt-table tr.needs { border-left: 3px solid #ef4444; }
+        .lt-table tr.needs td:first-child { box-shadow: none; }
+        .lt-table td { border: 0; padding: 5px 12px; }
+        .lt-amt, .lt-go { text-align: left; }
+        .lt-table td[data-k]::before { content: attr(data-k); display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; }
+        .lt-search { min-width: 0; width: 100%; }
     }
 </style>
+{% endblock %}
+{% block extra_body %}
+<script>
+// Narrow the list to the debtors whose name, clerk or category matches.
+function filterMatters(q) {
+    q = (q || '').trim().toLowerCase();
+    var shown = 0;
+    document.querySelectorAll('#lt-rows tr[data-search]').forEach(function (tr) {
+        var hit = !q || tr.getAttribute('data-search').indexOf(q) !== -1;
+        tr.hidden = !hit;
+        if (hit) shown++;
+    });
+    var none = document.getElementById('lt-nomatch');
+    if (none) none.hidden = shown !== 0;
+}
+</script>
 {% endblock %}
 {% block content %}
 <div class="page-card">
     <div class="flex-between">
         <h1 class="page-title">Lawyers &mdash; Legal Matters</h1>
-        {% if not user.is_lawyer %}<a class="btn btn-secondary btn-sm" href="{% url 'xero_handover' %}">&larr; Handover</a>{% endif %}
+        <div style="display:flex; gap:8px;">
+            <a class="btn btn-primary btn-sm" href="{% url 'xero_legal_diary' %}">&#128197; Diary</a>
+            {% if not user.is_lawyer %}<a class="btn btn-secondary btn-sm" href="{% url 'xero_handover' %}">&larr; Handover</a>{% endif %}
+        </div>
     </div>
-    <p class="page-subtitle">Companies handed over to LBINC for collection. {% if is_manager %}Approve pending matters to make them visible to the attorneys.{% else %}Open a matter to work through the collection workflow.{% endif %}</p>
+    <p class="page-subtitle">Every company handed to LBINC, sorted by where it stands. Pick a tab to see those matters; <strong>Action required</strong> lists what needs doing now and who must do it.</p>
 
-    {# ---- Lawyer dashboard KPIs ---- #}
     <div class="lk-grid">
-        <div class="lk-tile red"><div class="lk-label">&#9878; Total owed (with lawyers)</div><div class="lk-value">R&nbsp;{{ kpi_owed_active|floatformat:2|intcomma }}</div><div class="lk-hint">{{ kpi_active }} active matter{{ kpi_active|pluralize }}{% if kpi_owed_pending %} &middot; pending R {{ kpi_owed_pending|floatformat:2|intcomma }}{% endif %}</div></div>
-        <div class="lk-tile slate"><div class="lk-label">&#128230; Total handed over</div><div class="lk-value">R&nbsp;{{ kpi_handed_total|floatformat:2|intcomma }}</div><div class="lk-hint">{{ kpi_handed_clients }} client{{ kpi_handed_clients|pluralize }} &middot; still outstanding today</div></div>
-        <div class="lk-tile green"><div class="lk-label">&#128176; Recovered (with lawyers)</div><div class="lk-value">R&nbsp;{{ kpi_recovered_month|floatformat:2|intcomma }}</div><div class="lk-hint">this month &middot; all-time R {{ kpi_recovered_total|floatformat:2|intcomma }}</div></div>
-        <div class="lk-tile"><div class="lk-label">Active matters</div><div class="lk-value">{{ kpi_active }}</div></div>
-        <div class="lk-tile teal"><div class="lk-label">Avg completion</div><div class="lk-value">{{ kpi_avg_completion }}%</div></div>
-        <div class="lk-tile amber"><div class="lk-label">Not yet in litigation</div><div class="lk-value">{{ kpi_not_in_litigation }}</div><div class="lk-hint">no summons/application step yet</div></div>
-        {% if is_manager %}<div class="lk-tile warn"><div class="lk-label">Pending approval</div><div class="lk-value">{{ pending_count }}</div></div>{% endif %}
-        <div class="lk-tile"><div class="lk-label">Closed</div><div class="lk-value">{{ kpi_closed }}</div></div>
+        <div class="lk-tile"><div class="lk-label">Owed by matters with the lawyers</div><div class="lk-value">R&nbsp;{{ kpi_owed_active|floatformat:2|intcomma }}</div><div class="lk-hint">{{ kpi_active }} active matter{{ kpi_active|pluralize }}{% if kpi_owed_pending %} &middot; R {{ kpi_owed_pending|floatformat:2|intcomma }} awaiting approval{% endif %}</div></div>
+        <div class="lk-tile green"><div class="lk-label">Recovered by the lawyers</div><div class="lk-value">R&nbsp;{{ kpi_recovered_month|floatformat:2|intcomma }}</div><div class="lk-hint">this month &middot; R {{ kpi_recovered_total|floatformat:2|intcomma }} in total</div></div>
+        <a class="lk-tile red" href="?tab=action{% if keep %}&amp;{{ keep }}{% endif %}"><div class="lk-label">Action required</div><div class="lk-value">{{ action_count }}</div><div class="lk-hint">matter{{ action_count|pluralize }} needing someone to act</div></a>
+        {% if is_manager %}<a class="lk-tile warn" href="?tab=pending{% if keep %}&amp;{{ keep }}{% endif %}"><div class="lk-label">Awaiting your approval</div><div class="lk-value">{{ pending_count }}</div><div class="lk-hint">not yet visible to the attorneys</div></a>{% endif %}
     </div>
 
-    {% if not matters %}
-    <p class="muted">No legal matters yet.{% if is_manager %} Send a company to the lawyers from the Handover page.{% endif %}</p>
+    <form class="lt-filters" method="get">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <span class="f-label">Division</span>
+        <span class="lt-seg">
+            <a href="?tab={{ tab }}{% if attorney %}&amp;attorney={{ attorney }}{% endif %}" class="{% if not division %}on{% endif %}">All</a>
+            <a href="?tab={{ tab }}&amp;division=imi{% if attorney %}&amp;attorney={{ attorney }}{% endif %}" class="{% if division == 'imi' %}on{% endif %}" title="Independent Meat Inspection">IMI</a>
+            <a href="?tab={{ tab }}&amp;division=aps{% if attorney %}&amp;attorney={{ attorney }}{% endif %}" class="{% if division == 'aps' %}on{% endif %}" title="Agricultural Product Standards">APS</a>
+            <a href="?tab={{ tab }}&amp;division=none{% if attorney %}&amp;attorney={{ attorney }}{% endif %}" class="{% if division == 'none' %}on{% endif %}" title="Neither could be worked out - set it on the matter">Not set</a>
+        </span>
+        {% if division %}<input type="hidden" name="division" value="{{ division }}">{% endif %}
+        <span class="f-label">Attorney</span>
+        <select name="attorney" onchange="this.form.submit()" aria-label="Responsible attorney">
+            <option value="">Everyone</option>
+            {% if user.is_lawyer %}<option value="mine"{% if attorney == 'mine' %} selected{% endif %}>My matters</option>{% endif %}
+            {% for a in attorneys %}<option value="{{ a.id }}"{% if attorney == a.id|stringformat:"s" %} selected{% endif %}>{{ a.get_full_name|default:a.email }}</option>{% endfor %}
+            <option value="none"{% if attorney == 'none' %} selected{% endif %}>Nobody assigned</option>
+        </select>
+        <noscript><button class="btn btn-secondary btn-sm" type="submit">Apply</button></noscript>
+    </form>
+
+    <nav class="lt-tabs" aria-label="Matter categories">
+        {% for t in tabs %}
+        <a class="lt-tab{% if t.key == 'action' %} action{% endif %}{% if t.key == tab %} on{% endif %}{% if not t.count %} zero{% endif %}"
+           href="?tab={{ t.key }}{% if keep %}&amp;{{ keep }}{% endif %}" title="{{ t.hint }}"{% if t.key == tab %} aria-current="page"{% endif %}>
+            <span class="t-label">{{ t.label }}</span>
+            <span class="t-count">{{ t.count }}</span>
+            <span class="t-total">R&nbsp;{{ t.total|floatformat:0|intcomma }}</span>
+        </a>
+        {% endfor %}
+    </nav>
+
+    <div class="lt-bar">
+        <div class="lt-hint"><strong>{{ current_tab.label }}:</strong> {{ current_tab.hint }}</div>
+        {% if rows %}<input type="search" class="lt-search" placeholder="Search debtor, clerk or category&hellip;" oninput="filterMatters(this.value)" aria-label="Search matters">{% endif %}
+    </div>
+
+    {% if rows %}
+    <table class="lt-table">
+        <thead>
+            <tr>
+                <th>Debtor</th>
+                <th style="text-align:right;">Owes</th>
+                <th>Where it stands</th>
+                <th>Next action &amp; deadline</th>
+                <th>Last action</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="lt-rows">
+            {% for m in rows %}
+            <tr class="{% if m.board.actions %}needs{% endif %}" data-search="{{ m.contact_name|default:m.contact_id|lower }} {{ m.clerk_name|lower }} {{ m.category_name|lower }} {{ m.division_label|lower }} {{ m.attorney.get_full_name|lower }}">
+                <td data-k="Debtor">
+                    {% if m.status != 'pending' or is_manager %}<a class="lt-name" href="{% url 'xero_legal_matter' m.id %}">{{ m.contact_name|default:m.contact_id }}</a>{% else %}<span class="lt-name">{{ m.contact_name|default:m.contact_id }}</span>{% endif %}
+                    {% if m.doc_count %}<span class="lt-docs" title="{{ m.doc_count }} document{{ m.doc_count|pluralize }} on the matter">&#128206; {{ m.doc_count }}</span>{% endif %}
+                    <div class="lt-sub">{% if m.division_key %}<span class="lt-div {{ m.division_key }}{% if m.division_auto %} auto{% endif %}" title="{% if m.division_auto %}Worked out from the Xero project codes - confirm it on the matter{% else %}Set by {{ m.division_set_by }}{% endif %}">{{ m.division_label }}</span> {% endif %}{{ m.category_name }}{% if not user.is_lawyer %} &middot; Clerk: {{ m.clerk_name|default:"none" }}{% endif %}</div>
+                    <div class="lt-sub">Attorney: {% if m.attorney %}{{ m.attorney.get_full_name|default:m.attorney.email }}{% else %}<em>not assigned</em>{% endif %}</div>
+                </td>
+                <td data-k="Owes" class="lt-amt">R&nbsp;{{ m.amount_owed|floatformat:2|intcomma }}{% if m.board.received %}<div class="lt-sub" title="Paid since the matter was handed over">R&nbsp;{{ m.board.received|floatformat:2|intcomma }} paid</div>{% endif %}</td>
+                <td data-k="Where it stands">
+                    <span class="lt-stage {{ m.board.stage }}">{{ m.board.stage_label }}</span>
+                    <div class="lt-detail">{{ m.board.detail }}</div>
+                    {% if m.status == 'active' and not m.staleness and m.lod_grace_until %}<div class="lt-sub" title="The debtor has 28 days to respond to the Letter of Demand, so the matter is not counted as inactive until then">&#9203; Not counted as inactive until {{ m.lod_grace_until|date:"j M" }}</div>{% endif %}
+                </td>
+                <td data-k="Next action">
+                    {% if m.board.actions %}
+                    <div class="lt-actions">{% for a in m.board.actions %}<div class="lt-act"><span class="who">{{ a.owner }}</span>{{ a.text }}{% if a.due %}<span class="lt-due late">{% if a.overdue %}Overdue since {{ a.due|date:"j M" }}{% else %}Due {{ a.due|date:"j M" }}{% endif %}</span>{% endif %}</div>{% endfor %}</div>
+                    {% elif m.board.next %}
+                    <div class="lt-next"><span class="who">{{ m.board.next.owner }}</span>{{ m.board.next.text }}
+                        {% if m.board.next.due %}<span class="lt-due{% if m.board.next.due <= today %} soon{% endif %}">Due {{ m.board.next.due|date:"j M Y" }}{% if m.board.next.due == today %} (today){% endif %}</span>{% endif %}</div>
+                    {% elif m.status == 'pending' %}<span class="lt-none">Waiting for FSA approval</span>
+                    {% else %}<span class="lt-none">Nothing outstanding</span>{% endif %}
+                </td>
+                <td data-k="Last action">
+                    {% if m.last_action %}
+                    <div class="lt-last">{{ m.last_action.title }}<span class="when">{{ m.last_action.date|date:"j M Y" }} &middot; {{ m.last_action.who }}</span></div>
+                    {% else %}<span class="lt-none">&mdash;</span>{% endif %}
+                </td>
+                <td class="lt-go">
+                    {% if m.status == 'pending' and can_approve %}
+                    <form method="post" action="{% url 'xero_legal_approve' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="matter_id" value="{{ m.id }}">
+                        <input type="hidden" name="next" value="{% url 'xero_legal' %}?tab=pending">
+                        <button type="submit" class="btn btn-primary btn-sm">&#10003; Approve</button>
+                    </form>
+                    <form method="post" action="{% url 'xero_legal_cancel' %}"
+                          onsubmit="return confirm('Withdraw {{ m.contact_name|escapejs|default:m.contact_id }} from the lawyers?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="matter_id" value="{{ m.id }}">
+                        <input type="hidden" name="next" value="{% url 'xero_legal' %}?tab=pending">
+                        <button type="submit" class="btn btn-secondary btn-sm">Withdraw</button>
+                    </form>
+                    {% elif m.status != 'pending' or is_manager %}
+                    <a class="btn btn-primary btn-sm" href="{% url 'xero_legal_matter' m.id %}">Open &rarr;</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            <tr id="lt-nomatch" hidden><td colspan="6" class="lt-empty">No matter in this tab matches your search.</td></tr>
+        </tbody>
+    </table>
+    {% else %}
+    <div class="lt-empty">{% if tab == 'action' %}&#10003; Nothing needs action right now.{% elif not matters %}No legal matters yet.{% if is_manager %} Send a company to the lawyers from the Handover page.{% endif %}{% else %}No matters in this category.{% endif %}</div>
     {% endif %}
-
-    {% regroup matters by status as status_groups %}
-    {% for grp in status_groups %}
-    <div class="section-title">
-        {% if grp.grouper == 'pending' %}Pending approval{% elif grp.grouper == 'active' %}Active{% else %}Closed{% endif %}
-        ({{ grp.list|length }})
-        <span class="sec-total">R&nbsp;{% if grp.grouper == 'pending' %}{{ kpi_owed_pending|floatformat:2|intcomma }}{% elif grp.grouper == 'active' %}{{ kpi_owed_active|floatformat:2|intcomma }}{% else %}{{ kpi_owed_closed|floatformat:2|intcomma }}{% endif %} handed over</span>
-    </div>
-    {% for m in grp.list %}
-    <div class="lm-card {{ m.staleness }}">
-        <div class="lm-head">
-            <div class="lm-id">
-                <span class="lm-name">{{ m.contact_name|default:m.contact_id }}</span>
-                <span class="lm-status {{ m.status }}">{{ m.get_status_display }}</span>
-            </div>
-            <div class="lm-actions">
-                <a class="btn btn-secondary btn-sm" href="{% url 'xero_company_report' %}?cid={{ m.report_cid|urlencode }}" target="_blank" rel="noopener">&#128196; Full company report</a>
-                {% if m.status == 'active' %}
-                <a class="btn btn-primary btn-sm" href="{% url 'xero_legal_matter' m.id %}">Open workflow &rarr;</a>
-                {% elif m.status == 'pending' and can_approve %}
-                <form method="post" action="{% url 'xero_legal_approve' %}" style="display:inline;">
-                    {% csrf_token %}
-                    <input type="hidden" name="matter_id" value="{{ m.id }}">
-                    <input type="hidden" name="next" value="{% url 'xero_legal' %}">
-                    <button type="submit" class="btn btn-primary btn-sm">&#10003; Approve</button>
-                </form>
-                {% elif m.status == 'pending' %}
-                <span class="muted" style="font-size:12px;">Awaiting Super Admin approval</span>
-                {% endif %}
-                {% if is_manager and m.status != 'closed' %}
-                <form method="post" action="{% url 'xero_legal_cancel' %}" style="display:inline;"
-                      onsubmit="return confirm('Close / withdraw {{ m.contact_name|escapejs|default:m.contact_id }} from the lawyers?');">
-                    {% csrf_token %}
-                    <input type="hidden" name="matter_id" value="{{ m.id }}">
-                    <input type="hidden" name="next" value="{% url 'xero_legal' %}">
-                    <button type="submit" class="btn btn-secondary btn-sm">Close</button>
-                </form>
-                {% endif %}
-            </div>
-        </div>
-
-        {# The numbers that were pills now read as labelled facts. #}
-        <div class="lm-facts">
-            <div class="lm-fact">
-                <div class="lm-fact-k">Owes</div>
-                <div class="lm-fact-v{% if not m.amount_owed %} zero{% endif %}"
-                     title="Total outstanding owed to FSA across all open invoices">R&nbsp;{{ m.amount_owed|floatformat:2|intcomma }}</div>
-            </div>
-            {% if not user.is_lawyer %}
-            <div class="lm-fact">
-                <div class="lm-fact-k">Debtor clerk</div>
-                <div class="lm-fact-v{% if not m.clerk_name %} zero{% endif %}" style="font-size:13.5px;">{{ m.clerk_name|default:"Unallocated" }}</div>
-            </div>
-            {% endif %}
-            <div class="lm-fact">
-                <div class="lm-fact-k">Category</div>
-                <div class="lm-fact-v" style="font-size:13.5px;">{{ m.category_name }}</div>
-            </div>
-            {% if m.status == 'active' %}
-            <div class="lm-fact wide">
-                <div class="lm-fact-k">Workflow progress</div>
-                <div class="lm-fact-v">{% if m.progress_total %}{% widthratio m.progress_done m.progress_total 100 %}{% else %}0{% endif %}%
-                    <span class="lm-fact-sub">{{ m.progress_done }} of {{ m.progress_total }} steps done</span>
-                </div>
-                <div class="lm-bar"><span style="width: {% if m.progress_total %}{% widthratio m.progress_done m.progress_total 100 %}{% else %}0{% endif %}%;"></span></div>
-            </div>
-            <div class="lm-fact wide">
-                <div class="lm-fact-k">Litigation route</div>
-                <div class="lm-rt">
-                    <span class="rt-chip{% if m.summons_opposed %} opp{% endif %}">Summons: {% if m.summons_opposed %}Opposed{% else %}Unopposed{% endif %}</span>
-                    <span class="rt-chip{% if m.application_opposed %} opp{% endif %}">Application: {% if m.application_opposed %}Opposed{% else %}Unopposed{% endif %}</span>
-                </div>
-            </div>
-            {% endif %}
-            {% if m.staleness %}
-            <div class="lm-fact">
-                <div class="lm-fact-k">Activity</div>
-                <span class="idle-badge {{ m.staleness }}" title="No milestone or comment for {{ m.days_idle }} days">&#9888; None for {{ m.days_idle }} days</span>
-            </div>
-            {% endif %}
-            {% if m.status == 'active' and m.lod_delivery.outstanding %}
-            <div class="lm-fact wide">
-                <div class="lm-fact-k">Letter of Demand</div>
-                <span class="idle-badge stale" style="white-space:nowrap; display:inline-block;" title="Arrange for an FSA inspector to deliver it by hand and upload the signed proof">&#128666; Hand delivery outstanding since {{ m.lod_delivery.due_at|date:"j M" }}</span>
-            </div>
-            {% endif %}
-            {% if not m.staleness and m.lod_grace_until and m.status == 'active' %}
-            <div class="lm-fact wide">
-                <div class="lm-fact-k">Activity</div>
-                <span class="idle-badge grace" title="The debtor has 28 days to respond to the Letter of Demand, so the matter is not counted as inactive until then">&#9203; LOD served &middot; not counted as inactive until {{ m.lod_grace_until|date:"j M" }}</span>
-            </div>
-            {% endif %}
-        </div>
-
-        {# Headline of the timeline below: the newest step the lawyers ticked. #}
-        <div class="lm-last{% if not m.last_action %} none{% elif m.last_action.kind == 'milestone' %} milestone{% endif %}">
-            <span class="lm-last-label">Last action</span>
-            {% if m.last_action %}
-            <span class="lm-last-title">{% if m.last_action.kind == 'step' %}&#10003;{% else %}&#9873;{% endif %} {{ m.last_action.title }}</span>
-            <span class="lm-last-who">{{ m.last_action.who }} &middot; {{ m.last_action.date|date:"M j, Y" }} &middot; {{ m.last_action.date|timesince }} ago</span>
-            {% else %}
-            <span class="lm-last-none">&mdash; no workflow step done yet</span>
-            {% endif %}
-        </div>
-
-        <div class="tlh-label">Milestones</div>
-        {% include "xero/_legal_timeline.html" with timeline=m.milestones matter=m %}
-
-        <div class="lm-meta">
-            <span class="mt"><span class="mt-k">Sent</span> {{ m.sent_by|default:"—" }} &middot; {{ m.sent_at|date:"Y-m-d H:i" }}</span>
-            {% if m.approved_by %}<span class="mt"><span class="mt-k">Approved</span> {{ m.approved_by }} &middot; {{ m.approved_at|date:"Y-m-d H:i" }}</span>{% endif %}
-            {% if m.status == 'closed' and m.closed_by %}<span class="mt"><span class="mt-k">Closed</span> {{ m.closed_by }} &middot; {{ m.closed_at|date:"Y-m-d H:i" }}</span>{% endif %}
-        </div>
-    </div>
-    {% endfor %}
-    {% endfor %}
 </div>
 {% endblock %}

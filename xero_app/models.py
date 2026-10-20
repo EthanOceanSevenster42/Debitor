@@ -117,12 +117,16 @@ class DebtorNotice(models.Model):
     # attorneys, or a comment / document / status change by either side.
     KIND_NEW_MATTER = "new_matter"
     KIND_MATTER_UPDATE = "matter_update"
+    # The legal diary: a promised payment or instalment is due or was missed, a
+    # follow-up is due, or the daily list of what is due.
+    KIND_LEGAL_REMINDER = "legal_reminder"
     KIND_CHOICES = [(KIND_COMMENT, "Comment"), (KIND_REPLY, "Reply"),
                     (KIND_ALLOCATION, "Allocation"),
                     (KIND_LOD_DELIVERY_DUE, "LOD hand delivery due"),
                     (KIND_LOD_DELIVERED, "LOD delivered"),
                     (KIND_NEW_MATTER, "New legal instruction"),
-                    (KIND_MATTER_UPDATE, "Matter update")]
+                    (KIND_MATTER_UPDATE, "Matter update"),
+                    (KIND_LEGAL_REMINDER, "Legal diary")]
 
     tenant_id = models.CharField(max_length=64, db_index=True)
     recipient = models.ForeignKey(
@@ -965,6 +969,61 @@ class LegalMatter(models.Model):
     # When FSA was told the Letter of Demand is due for hand delivery by an
     # inspector, so the alert goes out once rather than every hour.
     lod_delivery_notified_at = models.DateTimeField(null=True, blank=True)
+    # The Letter of Demand could not be delivered: the facility could not be
+    # found, was closed, or refused it. Cleared once delivery is confirmed.
+    DELIVERY_FAILED_REASONS = [
+        ("no_trace", "No trace - the facility could not be found"),
+        ("closed", "Premises closed or vacated"),
+        ("refused", "Delivery refused"),
+        ("bad_address", "Wrong or incomplete address"),
+        ("other", "Other"),
+    ]
+    delivery_failed = models.BooleanField(default=False)
+    delivery_failed_reason = models.CharField(max_length=20, choices=DELIVERY_FAILED_REASONS,
+                                              blank=True, default="")
+    delivery_failed_note = models.CharField(max_length=500, blank=True, default="")
+    delivery_failed_by = models.CharField(max_length=255, blank=True, default="")
+    delivery_failed_at = models.DateTimeField(null=True, blank=True)
+    # A follow-up someone diarised on the matter; from that date it shows under
+    # Action required until it is cleared.
+    follow_up_on = models.DateField(null=True, blank=True)
+    follow_up_note = models.CharField(max_length=500, blank=True, default="")
+    follow_up_by = models.CharField(max_length=255, blank=True, default="")
+    follow_up_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="legal_follow_ups")
+    # The attorney responsible for the matter. Diary reminders go to them; with
+    # nobody set, to every attorney.
+    attorney = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="legal_matters", limit_choices_to={"role": "lawyer"})
+    # Independent Meat Inspection or Agricultural Product Standards. Blank means
+    # it has not been set by hand; the pages then work it out from the debtor's
+    # Xero project codes and category (legal_board.guess_division).
+    IMI = "imi"
+    APS = "aps"
+    DIVISION_CHOICES = [(IMI, "IMI - Independent Meat Inspection"),
+                        (APS, "APS - Agricultural Product Standards")]
+    division = models.CharField(max_length=4, choices=DIVISION_CHOICES, blank=True, default="")
+    division_set_by = models.CharField(max_length=255, blank=True, default="")
+    # Why the matter was closed, and a closure an attorney recommended that is
+    # waiting for FSA's approval.
+    CLOSURE_REASONS = [
+        ("settled", "Paid in full / settled"),
+        ("ceased", "Facility permanently ceased operations"),
+        ("insolvent", "Debtor insolvent or bankrupt"),
+        ("untraceable", "Debtor cannot be traced despite reasonable efforts"),
+        ("irrecoverable", "Amount irrecoverable"),
+        ("returned", "Brought back to FSA"),
+        ("withdrawn", "Withdrawn by FSA"),
+        ("other", "Other"),
+    ]
+    closure_reason = models.CharField(max_length=20, choices=CLOSURE_REASONS, blank=True, default="")
+    closure_note = models.TextField(blank=True, default="")
+    closure_requested_reason = models.CharField(max_length=20, choices=CLOSURE_REASONS, blank=True, default="")
+    closure_requested_note = models.TextField(blank=True, default="")
+    closure_requested_by = models.CharField(max_length=255, blank=True, default="")
+    closure_requested_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -973,6 +1032,83 @@ class LegalMatter(models.Model):
 
     def __str__(self):
         return f"{self.contact_name or self.contact_id} ({self.get_status_display()})"
+
+
+class LegalPaymentPlan(models.Model):
+    """A debtor's commitment to pay, recorded on the legal matter.
+
+    A PROMISE is one amount by one date. An ARRANGEMENT is an instalment plan:
+    ``amount`` every week, fortnight or month from ``first_date``, optionally for
+    a set number of instalments. Payments the Xero sync picks up for the debtor
+    after the plan was recorded are measured against it, so the Lawyers page can
+    say whether it is being kept. One plan is open per matter at a time."""
+    PROMISE = "promise"
+    ARRANGEMENT = "arrangement"
+    KIND_CHOICES = [(PROMISE, "Promise to pay"), (ARRANGEMENT, "Payment arrangement")]
+
+    WEEKLY = "weekly"
+    FORTNIGHTLY = "fortnightly"
+    MONTHLY = "monthly"
+    FREQUENCY_CHOICES = [(WEEKLY, "Weekly"), (FORTNIGHTLY, "Every two weeks"), (MONTHLY, "Monthly")]
+
+    OPEN = "open"
+    KEPT = "kept"
+    BROKEN = "broken"
+    CANCELLED = "cancelled"
+    STATUS_CHOICES = [(OPEN, "Open"), (KEPT, "Kept / paid in full"), (BROKEN, "Broken"),
+                      (CANCELLED, "Cancelled")]
+
+    matter = models.ForeignKey(LegalMatter, on_delete=models.CASCADE, related_name="payment_plans")
+    kind = models.CharField(max_length=12, choices=KIND_CHOICES)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    first_date = models.DateField()
+    frequency = models.CharField(max_length=12, choices=FREQUENCY_CHOICES, blank=True, default="")
+    instalments = models.PositiveIntegerField(null=True, blank=True)
+    # The amount the arrangement settles - normally everything owed when it was
+    # agreed. With no number of instalments given, it decides how many there are.
+    total_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    note = models.CharField(max_length=500, blank=True, default="")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=OPEN, db_index=True)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    closed_by = models.CharField(max_length=255, blank=True, default="")
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} R{self.amount} ({self.get_status_display()})"
+
+
+class LegalPayment(models.Model):
+    """A payment the attorneys confirm they received from the debtor - into
+    their trust account, or seen on proof of payment - with the proof attached.
+
+    Payments into FSA's own account are picked up from Xero by the sync; this
+    covers what Xero cannot show yet. A promise or arrangement counts whichever
+    of the two totals is larger, so the same payment is never counted twice."""
+    matter = models.ForeignKey(LegalMatter, on_delete=models.CASCADE, related_name="payments")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    paid_on = models.DateField()
+    reference = models.CharField(max_length=120, blank=True, default="")
+    note = models.CharField(max_length=500, blank=True, default="")
+    proof = models.FileField(upload_to="legal_payments/%Y/%m/", blank=True)
+    proof_name = models.CharField(max_length=255, blank=True, default="")
+    recorded_by = models.CharField(max_length=255, blank=True, default="")
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-paid_on", "-recorded_at"]
+
+
+class LegalReminder(models.Model):
+    """A diary reminder that has gone out, so each goes out once: keyed by what
+    it was about (a promise date, an instalment, a follow-up, a day's list)."""
+    matter = models.ForeignKey(LegalMatter, on_delete=models.CASCADE, null=True, blank=True,
+                               related_name="reminders")
+    key = models.CharField(max_length=120, unique=True)
+    sent_at = models.DateTimeField(auto_now_add=True)
 
 
 class LegalStep(models.Model):

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Legal Diary - FSA Debtor System{% endblock %}
+{% block extra_head %}
+<style>
+    .dy-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .dy-seg { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
+    .dy-seg a { padding: 6px 14px; font-size: 13px; font-weight: 700; color: #334155; text-decoration: none; background: #fff; border-right: 1px solid #e2e8f0; }
+    .dy-seg a:last-child { border-right: 0; }
+    .dy-seg a.on { background: var(--navy, #1e3a5f); color: #fff; }
+    .dy-sec { margin-top: 18px; }
+    .dy-sec h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: #475569; margin: 0 0 8px; display: flex; gap: 8px; align-items: center; }
+    .dy-sec h2 .n { background: #e2e8f0; color: #334155; border-radius: 10px; padding: 0 8px; font-size: 11.5px; }
+    .dy-sec.overdue h2 { color: #b91c1c; } .dy-sec.overdue h2 .n { background: #fee2e2; color: #b91c1c; }
+    .dy-sec.today h2 { color: #b45309; } .dy-sec.today h2 .n { background: #fef3c7; color: #92400e; }
+    .dy-item { display: grid; grid-template-columns: 96px 1fr auto; gap: 4px 14px; align-items: start; padding: 9px 12px; border: 1px solid #e5e7eb; border-radius: 10px; margin-bottom: 6px; background: #fff; }
+    .dy-sec.overdue .dy-item { border-left: 3px solid #ef4444; }
+    .dy-sec.today .dy-item { border-left: 3px solid #f59e0b; }
+    .dy-date { font-size: 12.5px; font-weight: 800; color: var(--navy); }
+    .dy-date .late { display: block; font-size: 11px; font-weight: 700; color: #b91c1c; }
+    .dy-text { font-size: 13.5px; color: #1f2937; }
+    .dy-text .who { font-weight: 800; text-transform: uppercase; font-size: 9.5px; letter-spacing: .4px; color: #475569; background: #f1f5f9; border-radius: 4px; padding: 1px 6px; margin-right: 6px; }
+    .dy-text .m { display: block; font-size: 12px; color: #64748b; margin-top: 2px; }
+    .dy-text .m a { font-weight: 700; color: var(--navy); text-decoration: none; }
+    .dy-empty { color: #94a3b8; font-size: 13px; padding: 4px 2px; }
+    @media (max-width: 640px) { .dy-item { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-card">
+    <div class="flex-between">
+        <h1 class="page-title">Legal Diary</h1>
+        <a class="btn btn-secondary btn-sm" href="{% url 'xero_legal' %}">&larr; Lawyers</a>
+    </div>
+    <p class="page-subtitle">Everything due on the active legal matters, by date: payments to check, follow-ups, deliveries and next steps. Reminders for these are also emailed each morning.</p>
+
+    <div class="dy-bar">
+        <span class="dy-seg">
+            <a href="?who=mine" class="{% if who == 'mine' %}on{% endif %}">{% if user.is_lawyer %}My matters{% else %}FSA's tasks{% endif %}</a>
+            <a href="?who=all" class="{% if who != 'mine' %}on{% endif %}">Everything</a>
+        </span>
+        <span class="muted" style="font-size:12.5px;">{{ total }} item{{ total|pluralize }} &middot; today is {{ today|date:"l j F Y" }}</span>
+    </div>
+
+    {% for key, label, items in sections %}
+    <div class="dy-sec {{ key }}">
+        <h2>{{ label }} <span class="n">{{ items|length }}</span></h2>
+        {% for i in items %}
+        <div class="dy-item">
+            <div class="dy-date">{% if i.due %}{{ i.due|date:"D j M" }}{% else %}Now{% endif %}{% if i.overdue %}<span class="late">{{ i.due|timesince:today }} overdue</span>{% endif %}</div>
+            <div class="dy-text"><span class="who">{{ i.owner }}</span>{{ i.text }}
+                <span class="m"><a href="{% url 'xero_legal_matter' i.matter.id %}">{{ i.matter.contact_name|default:i.matter.contact_id }}</a> &middot; {{ i.stage_label }}{% if i.matter.attorney %} &middot; {{ i.matter.attorney.get_full_name|default:i.matter.attorney.email }}{% endif %}</span></div>
+            <a class="btn btn-secondary btn-sm" href="{% url 'xero_legal_matter' i.matter.id %}">Open &rarr;</a>
+        </div>
+        {% empty %}
+        <div class="dy-empty">{% if key == 'overdue' %}&#10003; Nothing overdue.{% else %}Nothing.{% endif %}</div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

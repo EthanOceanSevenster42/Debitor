@@ -139,6 +139,12 @@ class Command(BaseCommand):
                 self.stdout.write(f"{n} Letter of Demand hand-delivery alert(s) sent")
         except Exception as e:  # an alert must never stop the sync
             self.stderr.write(self.style.WARNING(f"LOD hand-delivery alerts skipped: {e}"))
+        try:
+            n = notifications.send_legal_diary_reminders()
+            if n:
+                self.stdout.write(f"{n} legal diary reminder(s) sent")
+        except Exception as e:  # nor may a reminder
+            self.stderr.write(self.style.WARNING(f"Legal diary reminders skipped: {e}"))
         # Honour the user-configured schedule. The Refresh now button passes
         # --force; the Windows Scheduled Task does not, so it skips out-of-window
         # firings cleanly without doing any Xero work.

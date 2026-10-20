@@ -129,6 +129,9 @@ STEP_LABELS = {
     for t in group
 }
 STEP_LABELS["_route"] = "Route / defence"
+# Promises, arrangements, payments, delivery problems and closure, logged on the
+# matter so each has a dated, named entry in its history.
+STEP_LABELS["_status"] = "Status & payments"
 
 
 # The Letter of Demand counts as sent once it is served by email or sheriff.
@@ -168,7 +171,7 @@ def step_section(step_key):
         return "Summons"
     if step_key.startswith(("au_", "ao_")):
         return "Application for payment"
-    if step_key == "_route":
+    if step_key in ("_route", "_status"):
         return ""
     return "Collections"
 

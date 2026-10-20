@@ -131,6 +131,84 @@
     .tlh-att { margin-top: 3px; }
     .tlh-att a { font-size: 12px; text-decoration: none; margin-right: 4px; }
     .tlh-who { font-size: 10px; color: #94a3b8; margin-top: 3px; }
+    /* Stage path: where the matter is on its way through */
+    .mp-path { display: flex; margin: 14px 0 6px; overflow-x: auto; }
+    .mp-step { flex: 1 1 0; min-width: 118px; position: relative; padding: 8px 10px 8px 22px; font-size: 12.5px; font-weight: 700;
+               color: #64748b; background: #f1f5f9; text-align: center; white-space: nowrap;
+               clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%); margin-right: -6px; }
+    .mp-step:first-child { clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%); border-radius: 8px 0 0 8px; padding-left: 12px; }
+    .mp-step.done { background: #ccebe8; color: #115e59; }
+    .mp-step.skipped { background: #f1f5f9; color: #94a3b8; text-decoration: line-through; }
+    .mp-step.current { background: var(--brand-teal, #0E7C7B); color: #fff; }
+    .mp-side { font-size: 13px; color: #334155; margin: 4px 0 0; }
+    .mp-side .lt-stage { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; margin-right: 6px; background: #fefce8; color: #854d0e; border: 1px solid #fde68a; }
+    .mp-side .lt-stage.no_trace { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+    .mp-side .lt-stage.arrangement { background: #fdf4ff; color: #a21caf; border-color: #f5d0fe; }
+    .mp-act { margin: 12px 0; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 10px 14px; }
+    .mp-act h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .4px; color: #b91c1c; margin: 0 0 6px; }
+    .mp-act li { font-size: 13.5px; color: #7f1d1d; margin: 3px 0; }
+    .mp-act .who { font-weight: 800; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; background: #fee2e2; border-radius: 4px; padding: 1px 6px; margin-right: 6px; }
+    /* Status & payments */
+    .st-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; margin: 14px 0; }
+    .st-card h2 { font-size: 15px; color: var(--navy); margin: 0; }
+    .st-intro { font-size: 12.5px; color: #64748b; margin: 4px 0 10px; }
+    .st-plan { border: 1px solid #fde68a; background: #fffdf3; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+    .st-plan.arrangement { border-color: #f5d0fe; background: #fefaff; }
+    .st-plan.behind { border-color: #fecaca; background: #fef2f2; }
+    .st-plan-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+    .st-plan-title { font-weight: 800; color: var(--navy); font-size: 14px; }
+    .st-figs { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 8px 0 4px; }
+    .st-fig .k { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; }
+    .st-fig .v { font-size: 14px; font-weight: 700; color: #1f2937; }
+    .st-fig .v.bad { color: #b91c1c; } .st-fig .v.good { color: #047857; }
+    .st-plan-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .st-plan-actions form { display: inline; }
+    .st-flag { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border: 1px solid #fed7aa; background: #fff7ed; color: #7c2d12; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+    .st-flag.fu { border-color: #bfdbfe; background: #eff6ff; color: #1e3a8a; }
+    .st-flag form { margin-left: auto; }
+    .st-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+    .st-form { margin-top: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; }
+    .st-form h3 { font-size: 13.5px; margin: 0 0 8px; color: var(--navy); }
+    .st-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; }
+    .st-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: #475569; }
+    .st-fields .wide { grid-column: 1 / -1; }
+    .st-fields input, .st-fields select { padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 400; font-family: inherit; }
+    .st-fields em { font-style: normal; font-weight: 400; font-size: 11.5px; color: #94a3b8; }
+    .st-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+    .st-hist { margin-top: 10px; font-size: 12.5px; color: #475569; }
+    .st-hist summary { cursor: pointer; font-weight: 700; color: #334155; }
+    .st-hist li { margin: 3px 0; }
+    /* At-a-glance facts */
+    .mf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin: 12px 0; }
+    .mf { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; min-width: 0; }
+    .mf .k { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; font-weight: 700; }
+    .mf .v { font-size: 14.5px; font-weight: 700; color: var(--navy); margin-top: 2px; line-height: 1.25; }
+    .mf .s { font-size: 11.5px; color: #64748b; margin-top: 1px; }
+    .mf.next { grid-column: span 2; background: #f0fdfa; border-color: #99f6e4; }
+    .mf.next.late { background: #fef2f2; border-color: #fecaca; }
+    .mf.next.late .v { color: #991b1b; }
+    .mf select { font-size: 12.5px; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 6px; max-width: 100%; margin-top: 3px; }
+    @media (max-width: 720px) { .mf.next { grid-column: auto; } }
+    .mp-closure { margin: 12px 0; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 10px 14px; font-size: 13.5px; color: #78350f; }
+    .mp-closure form { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 8px 0 0; }
+    .mp-closure input[type=text] { padding: 6px 9px; border: 1px solid #fcd34d; border-radius: 6px; font-size: 13px; min-width: 240px; }
+    /* Instalment schedule and payments */
+    .sch { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 8px; }
+    .sch th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; padding: 4px 8px; border-bottom: 1px solid #e2e8f0; }
+    .sch td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; }
+    .sch .r { text-align: right; }
+    .sch-st { font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 8px; text-transform: uppercase; letter-spacing: .3px; }
+    .sch-st.paid { background: #dcfce7; color: #166534; }
+    .sch-st.missed { background: #fee2e2; color: #991b1b; }
+    .sch-st.due { background: #fef9c3; color: #854d0e; }
+    .sch-st.upcoming { background: #f1f5f9; color: #475569; }
+    .pay-h { font-size: 13px; font-weight: 800; color: var(--navy); margin: 14px 0 4px; }
+    .pay-src { font-size: 10px; font-weight: 800; padding: 1px 6px; border-radius: 4px; background: #e0f2fe; color: #075985; text-transform: uppercase; }
+    .pay-src.att { background: #f3e8ff; color: #6b21a8; }
+    .doc-list { list-style: none; margin: 8px 0 0; padding: 0; }
+    .doc-list li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .doc-list a { color: #1e40af; text-decoration: none; font-weight: 600; }
+    .doc-list .when { color: #94a3b8; font-size: 11.5px; margin-left: auto; }
 </style>
 {% endblock %}
 {% block extra_body %}
@@ -141,6 +219,14 @@ function toggleClientForm() {
     if (!form) return;
     if (form.hasAttribute('hidden')) { form.removeAttribute('hidden'); var f = form.querySelector('input, select, textarea'); if (f) f.focus(); }
     else form.setAttribute('hidden', '');
+}
+// Show one of the status forms (promise, arrangement, delivery, follow-up) and
+// hide the others.
+function showStatusForm(id) {
+    document.querySelectorAll('.st-form').forEach(function (f) {
+        if (f.id === id && f.hasAttribute('hidden')) { f.removeAttribute('hidden'); var i = f.querySelector('input:not([type=hidden]), select'); if (i) i.focus(); }
+        else f.setAttribute('hidden', '');
+    });
 }
 // Open / close a step's comment form. The button in the step header and the
 // form's own Cancel both land here.
@@ -176,6 +262,241 @@ function toggleAdd(btn) {
         </div>
     </div>
     <p class="page-subtitle">LBINC // FSA collection workflow. {% if can_work %}Tick steps as you complete them and add a comment on any step. Switch between Unopposed and Opposed if the debtor changes strategy.{% else %}Read-only &mdash; only the attorneys can update this matter.{% endif %}</p>
+
+    {# ---- Where the matter stands ---- #}
+    <div class="mp-path" aria-label="Stage">
+        {% for p in path %}<div class="mp-step {{ p.state }}"{% if p.state == 'current' %} aria-current="step"{% endif %}>{% if p.state == 'done' %}&#10003; {% endif %}{{ p.label }}</div>{% endfor %}
+    </div>
+    <p class="mp-side">{% if board.stage in 'promise arrangement no_trace pending' %}<span class="lt-stage {{ board.stage }}">{{ board.stage_label }}</span>{% endif %}{{ board.detail }}</p>
+
+    <div class="mf-grid">
+        <div class="mf"><div class="k">Owes (Xero)</div><div class="v">R&nbsp;{{ company_total|floatformat:2|intcomma }}</div><div class="s">{{ company_invoice_count }} open invoice{{ company_invoice_count|pluralize }}</div></div>
+        <div class="mf"><div class="k">Paid since handover</div><div class="v">R&nbsp;{{ board.received|floatformat:2|intcomma }}</div><div class="s">Xero and payments recorded here</div></div>
+        <div class="mf"><div class="k">Responsible attorney</div>
+            {% if can_assign %}
+            <form method="post" action="{% url 'xero_legal_assign' matter.id %}">{% csrf_token %}
+                <select name="attorney" onchange="this.form.submit()" aria-label="Responsible attorney">
+                    <option value="">&mdash; Not assigned &mdash;</option>
+                    {% for a in attorneys %}<option value="{{ a.id }}"{% if matter.attorney_id == a.id %} selected{% endif %}>{{ a.get_full_name|default:a.email }}</option>{% endfor %}
+                </select>
+            </form>
+            {% else %}<div class="v">{% if matter.attorney %}{{ matter.attorney.get_full_name|default:matter.attorney.email }}{% else %}Not assigned{% endif %}</div>{% endif %}
+        </div>
+        <div class="mf"><div class="k">IMI / APS</div>
+            {% if can_assign %}
+            <form method="post" action="{% url 'xero_legal_assign' matter.id %}">{% csrf_token %}
+                <select name="division" onchange="this.form.submit()" aria-label="IMI or APS">
+                    <option value="">Automatic{% if matter.division_guess %} ({{ matter.division_guess|upper }}){% else %} (not known){% endif %}</option>
+                    {% for v, l in division_choices %}<option value="{{ v }}"{% if matter.division == v %} selected{% endif %}>{{ l }}</option>{% endfor %}
+                </select>
+            </form>
+            {% else %}<div class="v">{{ matter.division_label }}</div>{% endif %}
+            <div class="s">{% if matter.division_auto %}From the Xero project codes{% else %}Set by {{ matter.division_set_by }}{% endif %}</div>
+        </div>
+        {% if next_task %}
+        <div class="mf next{% if next_task.overdue %} late{% endif %}"><div class="k">Next action{% if next_task.due %} &middot; {% if next_task.overdue %}overdue since{% else %}due{% endif %} {{ next_task.due|date:"j M Y" }}{% endif %}</div>
+            <div class="v">{{ next_task.text }}</div><div class="s">{{ next_task.owner }}</div></div>
+        {% endif %}
+    </div>
+
+    {% if matter.closure_requested_at %}
+    <div class="mp-closure">
+        &#9873; <strong>Closure recommended:</strong> {{ matter.get_closure_requested_reason_display }} &mdash; by {{ matter.closure_requested_by }} on {{ matter.closure_requested_at|date:"j M Y" }}.
+        {% if matter.closure_requested_note %}<div style="margin-top:4px;">{{ matter.closure_requested_note|linebreaksbr }}</div>{% endif %}
+        {% if can_decide_closure %}
+        <div>
+            <form method="post" action="{% url 'xero_legal_closure_decide' matter.id %}" onsubmit="return confirm('Close this matter?');">{% csrf_token %}<input type="hidden" name="decision" value="approve"><button class="btn btn-primary btn-sm" type="submit">&#10003; Approve &amp; close</button></form>
+            <form method="post" action="{% url 'xero_legal_closure_decide' matter.id %}">{% csrf_token %}<input type="hidden" name="decision" value="decline"><input type="text" name="note" placeholder="Why it stays open (sent to the attorneys)" maxlength="1000"><button class="btn btn-secondary btn-sm" type="submit">Decline</button></form>
+        </div>
+        {% else %}<div class="muted-sm" style="margin-top:4px;">Waiting for a Super Admin at FSA to approve it.</div>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if board.actions %}
+    <div class="mp-act">
+        <h2>&#9888; Action required</h2>
+        <ul style="margin:0; padding-left:18px;">{% for a in board.actions %}<li><span class="who">{{ a.owner }}</span>{{ a.text }}{% if a.overdue %} <span class="muted-sm">(overdue since {{ a.due|date:"j M" }})</span>{% endif %}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {# ---- Promises, arrangements, unsuccessful delivery, follow-up ---- #}
+    <div class="st-card" id="status">
+        <h2>Status &amp; payments</h2>
+        <p class="st-intro">Record a promise to pay or a payment arrangement, an unsuccessful delivery, or a follow-up date. Payments from Xero are checked against promises and arrangements automatically.</p>
+
+        {% with plan=board.plan pr=board.progress %}
+        {% if plan %}
+        <div class="st-plan {{ plan.kind }}{% if pr.behind %} behind{% endif %}">
+            <div class="st-plan-head">
+                <span class="st-plan-title">{{ plan.get_kind_display }}</span>
+                <span class="muted-sm">recorded by {{ plan.created_by|default:"&mdash;" }} on {{ plan.created_at|date:"j M Y" }}</span>
+            </div>
+            <div class="st-figs">
+                {% if plan.kind == 'promise' %}
+                <div class="st-fig"><div class="k">Promised</div><div class="v">R&nbsp;{{ plan.amount|floatformat:2|intcomma }} by {{ plan.first_date|date:"j M Y" }}</div></div>
+                {% else %}
+                <div class="st-fig"><div class="k">Instalment</div><div class="v">R&nbsp;{{ plan.amount|floatformat:2|intcomma }} {{ plan.get_frequency_display|lower }}</div></div>
+                <div class="st-fig"><div class="k">From</div><div class="v">{{ plan.first_date|date:"j M Y" }}</div></div>
+                {% if pr.count %}<div class="st-fig"><div class="k">Instalments</div><div class="v">{{ pr.count }}</div></div>{% endif %}
+                {% if pr.total %}<div class="st-fig"><div class="k">To settle</div><div class="v">R&nbsp;{{ pr.total|floatformat:2|intcomma }}</div></div>{% endif %}
+                {% endif %}
+                <div class="st-fig"><div class="k">Paid so far</div><div class="v{% if pr.paid_in_full %} good{% endif %}">R&nbsp;{{ pr.received|floatformat:2|intcomma }}</div></div>
+                {% if pr.balance is not None %}<div class="st-fig"><div class="k">Still to pay</div><div class="v">R&nbsp;{{ pr.balance|floatformat:2|intcomma }}</div></div>{% endif %}
+                {% if pr.behind %}<div class="st-fig"><div class="k">Behind by</div><div class="v bad">R&nbsp;{{ pr.shortfall|floatformat:2|intcomma }}</div></div>
+                {% elif pr.paid_in_full %}<div class="st-fig"><div class="k">Status</div><div class="v good">&#10003; Paid in full</div></div>
+                {% elif pr.next_date %}<div class="st-fig"><div class="k">Next payment</div><div class="v">R&nbsp;{{ pr.next_amount|floatformat:2|intcomma }} on {{ pr.next_date|date:"j M Y" }}</div></div>{% endif %}
+            </div>
+            {% if plan.note %}<div class="muted-sm">{{ plan.note }}</div>{% endif %}
+            {% if plan.kind == 'arrangement' %}
+            <table class="sch">
+                <thead><tr><th>#</th><th>Due</th><th class="r">Amount</th><th>Status</th></tr></thead>
+                <tbody>{% for r in pr.schedule %}<tr><td>{{ r.n }}</td><td>{{ r.date|date:"j M Y" }}</td><td class="r">R&nbsp;{{ r.amount|floatformat:2|intcomma }}</td><td><span class="sch-st {{ r.status }}">{% if r.status == 'paid' %}Paid{% elif r.status == 'missed' %}Missed{% elif r.status == 'due' %}Due now{% else %}Upcoming{% endif %}</span></td></tr>{% endfor %}</tbody>
+            </table>
+            {% if not pr.count %}<p class="muted-sm" style="margin:4px 0 0;">Open-ended: instalments continue until the account is settled.</p>{% endif %}
+            {% endif %}
+            {% if can_update_status %}
+            <div class="st-plan-actions">
+                <form method="post" action="{% url 'xero_legal_plan_close' matter.id %}">{% csrf_token %}<input type="hidden" name="outcome" value="kept"><button class="btn btn-primary btn-sm" type="submit">&#10003; Mark kept</button></form>
+                <form method="post" action="{% url 'xero_legal_plan_close' matter.id %}" onsubmit="return confirm('Mark this {{ plan.get_kind_display|lower }} as broken? The matter goes back to its place in the workflow.');">{% csrf_token %}<input type="hidden" name="outcome" value="broken"><button class="btn btn-secondary btn-sm" type="submit">&#10007; Mark broken</button></form>
+                <form method="post" action="{% url 'xero_legal_plan_close' matter.id %}" onsubmit="return confirm('Cancel this {{ plan.get_kind_display|lower }}?');">{% csrf_token %}<input type="hidden" name="outcome" value="cancelled"><button class="btn btn-secondary btn-sm" type="submit">Cancel it</button></form>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        {% if matter.delivery_failed %}
+        <div class="st-flag">
+            <span>&#128683; <strong>Unsuccessful delivery:</strong> {{ matter.get_delivery_failed_reason_display }}{% if matter.delivery_failed_note %} &mdash; {{ matter.delivery_failed_note }}{% endif %}
+                <span class="muted-sm">({{ matter.delivery_failed_by }}, {{ matter.delivery_failed_at|date:"j M Y" }})</span></span>
+            {% if can_update_status %}<form method="post" action="{% url 'xero_legal_delivery_failed' matter.id %}">{% csrf_token %}<input type="hidden" name="clear" value="1"><button class="btn btn-secondary btn-sm" type="submit">Clear</button></form>{% endif %}
+        </div>
+        {% endif %}
+
+        {% if matter.follow_up_on %}
+        <div class="st-flag fu">
+            <span>&#128197; <strong>Follow-up {% if matter.follow_up_on <= today %}due{% else %}on{% endif %} {{ matter.follow_up_on|date:"j M Y" }}</strong>{% if matter.follow_up_note %} &mdash; {{ matter.follow_up_note }}{% endif %}
+                <span class="muted-sm">(set by {{ matter.follow_up_by }})</span></span>
+            {% if can_update_status %}<form method="post" action="{% url 'xero_legal_follow_up' matter.id %}">{% csrf_token %}<input type="hidden" name="clear" value="1"><button class="btn btn-secondary btn-sm" type="submit">Done / clear</button></form>{% endif %}
+        </div>
+        {% endif %}
+
+        {% if can_update_status %}
+        <div class="st-tools">
+            <button type="button" class="ws-add-btn" onclick="showStatusForm('st-promise')">+ Promise to pay</button>
+            <button type="button" class="ws-add-btn" onclick="showStatusForm('st-arrangement')">+ Payment arrangement</button>
+            {% if not matter.delivery_failed %}<button type="button" class="ws-add-btn" onclick="showStatusForm('st-delivery')">&#128683; Delivery unsuccessful / no trace</button>{% endif %}
+            <button type="button" class="ws-add-btn" onclick="showStatusForm('st-followup')">&#128197; {% if matter.follow_up_on %}Change follow-up{% else %}Set a follow-up{% endif %}</button>
+            <button type="button" class="ws-add-btn" onclick="showStatusForm('st-payment')">&#128176; Record a payment received</button>
+            {% if not matter.closure_requested_at %}<button type="button" class="ws-add-btn" onclick="showStatusForm('st-close')">&#9873; {% if can_decide_closure %}Close the matter{% else %}Recommend closing{% endif %}</button>{% endif %}
+        </div>
+
+        <form method="post" action="{% url 'xero_legal_payment' matter.id %}" class="st-form" id="st-payment" enctype="multipart/form-data" hidden>
+            {% csrf_token %}
+            <h3>Record a payment received</h3>
+            <p class="muted-sm" style="margin:0 0 8px;">For money paid to the attorneys, or proof of a payment Xero does not show yet. Payments into FSA's account appear here automatically from Xero.</p>
+            <div class="st-fields">
+                <label>Amount (R)<input type="text" name="amount" inputmode="decimal" required></label>
+                <label>Paid on<input type="date" name="paid_on" value="{{ today|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}" required></label>
+                <label>Reference<input type="text" name="reference" maxlength="120" placeholder="e.g. EFT reference"></label>
+                <label>Proof of payment<input type="file" name="proof"></label>
+                <label class="wide">Note<input type="text" name="note" maxlength="500"></label>
+                <label class="wide" style="flex-direction:row; align-items:center; gap:8px; font-weight:600;"><input type="checkbox" name="settles" value="1"> This settles the account in full {% if can_decide_closure %}- close the matter{% else %}- recommend closing the matter{% endif %}</label>
+            </div>
+            <div class="st-form-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="showStatusForm('')">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save payment</button></div>
+        </form>
+
+        {% if not matter.closure_requested_at %}
+        <form method="post" action="{% url 'xero_legal_close' matter.id %}" class="st-form" id="st-close" enctype="multipart/form-data" hidden>
+            {% csrf_token %}
+            <h3>{% if can_decide_closure %}Close the matter{% else %}Recommend closing the matter{% endif %}</h3>
+            <p class="muted-sm" style="margin:0 0 8px;">{% if can_decide_closure %}The matter moves to Closed with this reason on record.{% else %}FSA is asked to approve it. A settlement Xero confirms - nothing left owing - closes straight away.{% endif %}</p>
+            <div class="st-fields">
+                <label>Reason<select name="reason" required><option value="">Choose&hellip;</option>{% for v, l in closure_reasons %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></label>
+                <label>Supporting documents<input type="file" name="documents" multiple><em>e.g. liquidation notice, sheriff's nulla bona return, trace report</em></label>
+                <label class="wide">Explanation<input type="text" name="note" maxlength="2000" placeholder="Required unless the account is settled - what was done and why it cannot be recovered"></label>
+            </div>
+            <div class="st-form-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="showStatusForm('')">Cancel</button><button type="submit" class="btn btn-primary btn-sm">{% if can_decide_closure %}Close the matter{% else %}Send for approval{% endif %}</button></div>
+        </form>
+        {% endif %}
+
+        <form method="post" action="{% url 'xero_legal_plan' matter.id %}" class="st-form" id="st-promise" hidden>
+            {% csrf_token %}<input type="hidden" name="kind" value="promise">
+            <h3>Promise to pay</h3>
+            <div class="st-fields">
+                <label>Amount promised (R)<input type="text" name="amount" inputmode="decimal" placeholder="e.g. 15000" required></label>
+                <label>Pay by<input type="date" name="first_date" required></label>
+                <label class="wide">Note<input type="text" name="note" maxlength="500" placeholder="e.g. Promised by the owner on the phone, will pay via EFT"></label>
+            </div>
+            {% if board.plan %}<p class="muted-sm" style="margin:8px 0 0;">This replaces the open {{ board.plan.get_kind_display|lower }}.</p>{% endif %}
+            <div class="st-form-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="showStatusForm('')">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save promise</button></div>
+        </form>
+
+        <form method="post" action="{% url 'xero_legal_plan' matter.id %}" class="st-form" id="st-arrangement" hidden>
+            {% csrf_token %}<input type="hidden" name="kind" value="arrangement">
+            <h3>Payment arrangement</h3>
+            <div class="st-fields">
+                <label>Instalment amount (R)<input type="text" name="amount" inputmode="decimal" placeholder="e.g. 2500" required></label>
+                <label>How often<select name="frequency" required>{% for v, l in plan_frequencies %}<option value="{{ v }}"{% if v == 'monthly' %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+                <label>First instalment on<input type="date" name="first_date" required></label>
+                <label>Amount to settle (R)<input type="text" name="total_amount" inputmode="decimal" value="{{ company_total|floatformat:2 }}"><em>Normally everything owed - {{ company_total|floatformat:2|intcomma }} in Xero now.</em></label>
+                <label>Number of instalments<input type="number" name="instalments" min="1" step="1" placeholder="optional"><em>Blank: worked out from the amount to settle.</em></label>
+                <label class="wide">Note<input type="text" name="note" maxlength="500" placeholder="e.g. Signed acknowledgement of debt received"></label>
+            </div>
+            {% if board.plan %}<p class="muted-sm" style="margin:8px 0 0;">This replaces the open {{ board.plan.get_kind_display|lower }}.</p>{% endif %}
+            <div class="st-form-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="showStatusForm('')">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save arrangement</button></div>
+        </form>
+
+        <form method="post" action="{% url 'xero_legal_delivery_failed' matter.id %}" class="st-form" id="st-delivery" hidden>
+            {% csrf_token %}
+            <h3>Delivery unsuccessful / no trace</h3>
+            <div class="st-fields">
+                <label>What happened<select name="reason" required><option value="">Choose&hellip;</option>{% for v, l in delivery_reasons %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></label>
+                <label class="wide">Details<input type="text" name="note" maxlength="500" placeholder="e.g. Inspector visited 12 Oct, building empty, neighbours say they moved"></label>
+            </div>
+            <div class="st-form-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="showStatusForm('')">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save</button></div>
+        </form>
+
+        <form method="post" action="{% url 'xero_legal_follow_up' matter.id %}" class="st-form" id="st-followup" hidden>
+            {% csrf_token %}
+            <h3>Follow-up</h3>
+            <div class="st-fields">
+                <label>Follow up on<input type="date" name="follow_up_on" value="{{ matter.follow_up_on|date:'Y-m-d' }}" required></label>
+                <label class="wide">What to do<input type="text" name="note" maxlength="500" value="{{ matter.follow_up_note }}" placeholder="e.g. Check whether the debtor filed a plea"></label>
+            </div>
+            <div class="st-form-actions"><button type="button" class="btn btn-secondary btn-sm" onclick="showStatusForm('')">Cancel</button><button type="submit" class="btn btn-primary btn-sm">Save follow-up</button></div>
+        </form>
+        {% elif not board.plan and not matter.delivery_failed and not matter.follow_up_on %}
+        <p class="muted-sm" style="margin:0;">No promise, arrangement or follow-up recorded.</p>
+        {% endif %}
+
+        {% if past_plans %}
+        <details class="st-hist">
+            <summary>Earlier promises and arrangements ({{ past_plans|length }})</summary>
+            <ul>{% for p in past_plans %}<li>{{ p.get_kind_display }}: R&nbsp;{{ p.amount|floatformat:2|intcomma }}{% if p.kind == 'arrangement' %} {{ p.get_frequency_display|lower }}{% endif %} from {{ p.first_date|date:"j M Y" }} &mdash; <strong>{{ p.get_status_display }}</strong>{% if p.closed_by %} ({{ p.closed_by }}, {{ p.closed_at|date:"j M Y" }}){% endif %}</li>{% endfor %}</ul>
+        </details>
+        {% endif %}
+
+        <div class="pay-h">Payments since the handover &mdash; R&nbsp;{{ board.received|floatformat:2|intcomma }}</div>
+        {% if xero_payments or recorded_payments %}
+        <table class="sch">
+            <thead><tr><th>Date</th><th>Source</th><th>Details</th><th class="r">Amount</th></tr></thead>
+            <tbody>
+                {% for p in recorded_payments %}<tr><td>{{ p.paid_on|date:"j M Y" }}</td><td><span class="pay-src att">Recorded</span></td><td>{{ p.reference|default:"" }}{% if p.note %} {{ p.note }}{% endif %} <span class="muted-sm">by {{ p.recorded_by }}</span>{% if p.proof %} &middot; <a href="{{ p.proof.url }}" target="_blank" rel="noopener">&#128206; proof</a>{% endif %}</td><td class="r">R&nbsp;{{ p.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+                {% for p in xero_payments %}<tr><td>{{ p.recovered_at|date:"j M Y" }}</td><td><span class="pay-src">Xero</span></td><td>Invoice {{ p.invoice_number|default:p.invoice_id }}</td><td class="r">R&nbsp;{{ p.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+            </tbody>
+        </table>
+        {% if xero_payments and recorded_payments %}<p class="muted-sm" style="margin:4px 0 0;">Xero shows R&nbsp;{{ xero_received|floatformat:2|intcomma }} and R&nbsp;{{ recorded_received|floatformat:2|intcomma }} was recorded here. The larger figure counts, so a payment in both is not counted twice.</p>{% endif %}
+        {% else %}<p class="muted-sm" style="margin:0;">No payments since the matter was handed over.</p>{% endif %}
+    </div>
+
+    {# ---- Every document on the matter ---- #}
+    <div class="st-card" id="documents">
+        <h2>Documents ({{ documents|length }})</h2>
+        {% if documents %}
+        <ul class="doc-list">{% for a in documents %}<li><a href="{{ a.file.url }}" target="_blank" rel="noopener">&#128206; {{ a.original_name|default:"document" }}</a>{% if a.nature %}<span class="muted-sm">{{ a.nature }}</span>{% endif %}<span class="muted-sm">{{ a.comment.author_name }}</span><span class="when">{{ a.uploaded_at|date:"j M Y" }}</span></li>{% endfor %}</ul>
+        {% else %}<p class="muted-sm" style="margin:6px 0 0;">No documents yet. Attach them to a step below, or with a payment or closure.</p>{% endif %}
+    </div>
 
     {# ---- Milestone timeline: dated history of steps, comments and actions ---- #}
     <div class="tl-card">

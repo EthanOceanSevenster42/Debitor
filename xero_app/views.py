@@ -33,10 +33,11 @@ from .models import (XeroConnection, OpenInvoiceSnapshot, SyncRun, SyncSchedule,
                      EmailTemplate, MessageTemplate, SystemSetting, HandoverSetting,
                      LegalMatter, LegalStep, LegalStepComment, LegalStepCommentAttachment,
                      RecoveredInvoice, LawyerReportConfig, ReportRecipient, DebtorNotice,
-                     HandoverReturn, LegalClientInfo,
+                     HandoverReturn, LegalClientInfo, LegalPaymentPlan, LegalPayment,
                      DebtorComment, DebtorCategory, DebtorClassification,
                      DEFAULT_WA_TEMPLATE, DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY)
 from . import legal_workflow
+from . import legal_board
 from .xero_client import (fetch_invoice_history, fetch_contact, clean_contact,
                           fetch_online_invoice_url, pacer, XeroDailyLimitError,
                           _refresh_access_token)
@@ -2481,6 +2482,7 @@ def xero_legal_cancel(request):
         matter.status = LegalMatter.CLOSED
         matter.closed_by = request.user.email
         matter.closed_at = timezone.now()
+        matter.closure_reason = matter.closure_reason or "withdrawn"
         matter.save()
         if matter.approved_at:   # the attorneys only know about matters they were given
             _log_notices_raised(request, notifications.notify_matter_update(
@@ -2509,6 +2511,8 @@ def xero_legal_return(request):
         matter.status = LegalMatter.CLOSED
         matter.closed_by = request.user.email
         matter.closed_at = timezone.now()
+        matter.closure_reason = "returned"
+        matter.closure_note = note
         matter.save()
         LegalStepComment.objects.create(
             matter=matter, step_key="_route", author=request.user,
@@ -2554,6 +2558,10 @@ def _mark_lod_delivered(request, matter):
     st.done_by = request.user.get_full_name() or request.user.email
     st.done_at = timezone.now()
     st.save()
+    if matter.delivery_failed:
+        # Delivered after all: no longer an unsuccessful delivery.
+        matter.delivery_failed = False
+        matter.save(update_fields=["delivery_failed", "updated_at"])
     _log_notices_raised(request, notifications.notify_lod_delivered(matter, request.user))
 
 
@@ -2582,7 +2590,7 @@ def _legal_timeline(matter):
 
     for c in matter.step_comments.prefetch_related("attachments").all():
         add(c.created_at, c.author_name,
-            "route" if c.step_key == "_route" else "comment",
+            "route" if c.step_key == "_route" else ("milestone" if c.step_key == "_status" else "comment"),
             legal_workflow.STEP_LABELS.get(c.step_key, c.step_key),
             detail=c.text,
             attachments=[{"name": a.original_name or a.file.name.split("/")[-1], "url": a.file.url}
@@ -2619,6 +2627,75 @@ def xero_legal_timeline(request, matter_id):
                   {"timeline": milestones, "matter": matter})
 
 
+def _project_codes_by_matter(tenant_id, matters):
+    """{matter.id: {Xero project codes on the debtor's open invoices}} - what
+    decides IMI or APS when nobody has set it by hand."""
+    by_cid, by_name = defaultdict(set), defaultdict(set)
+    rows = (OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id)
+            .filter(Q(contact_id__in=[m.contact_id for m in matters if m.contact_id])
+                    | Q(contact_name__in=[m.contact_name for m in matters if m.contact_name]))
+            .values_list("contact_id", "contact_name", "project_code").distinct())
+    for cid, cname, code in rows:
+        by_cid[cid].add(code)
+        by_name[cname].add(code)
+    return {m.id: by_cid.get(m.contact_id) or by_name.get(m.contact_name) or set() for m in matters}
+
+
+def _set_division(m, codes, resolver=None):
+    """Put the matter's IMI / APS on it for the pages: what was set by hand, or
+    else what its project codes and category suggest (division_auto)."""
+    if resolver is not None and not hasattr(m, "category_name"):
+        m.category_name = resolver.resolve(m.contact_id or m.contact_name, m.contact_name)[1]
+    m.division_guess = legal_board.guess_division(codes, getattr(m, "category_name", ""))
+    m.division_key = m.division or m.division_guess
+    m.division_auto = not m.division
+    m.division_label = legal_board.DIVISION_LABELS[m.division_key]
+
+
+def _can_change_matter(matter, user):
+    """Work the steps of a matter: an active one, or any one for a Super Admin."""
+    return _can_work_legal(user) and (matter.status == LegalMatter.ACTIVE or _can_manage_legal(user))
+
+
+def _seen_by_attorneys(matter):
+    """Active matters, and closed ones that were approved for the attorneys -
+    never one still awaiting approval or withdrawn before they saw it."""
+    return (matter.status == LegalMatter.ACTIVE
+            or (matter.status == LegalMatter.CLOSED and matter.approved_at is not None))
+
+
+def _attorney_choices():
+    return list(User.objects.filter(role=Role.LAWYER, is_active=True).order_by("first_name", "email"))
+
+
+def _status_log(matter, user, text, note="", files=(), nature=""):
+    """A dated, named entry in the matter's history for a status change, with
+    any supporting documents - the audit trail of promises, payments,
+    unsuccessful deliveries and closures."""
+    comment = LegalStepComment.objects.create(
+        matter=matter, step_key="_status", author=user,
+        author_name=user.get_full_name() or user.email,
+        text=text + (f"\n{note}" if note else ""))
+    for f in files:
+        LegalStepCommentAttachment.objects.create(
+            comment=comment, file=f, original_name=f.name[:255], nature=nature[:120])
+    return comment
+
+
+def _claim_matter(matter, user):
+    """The first attorney to work a matter nobody is responsible for takes it on."""
+    if user.is_lawyer and not matter.attorney_id:
+        matter.attorney = user
+        matter.save(update_fields=["attorney", "updated_at"])
+
+
+def _matter_owed(tenant_id, matter):
+    """What Xero says the debtor still owes."""
+    qs = OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id)
+    qs = qs.filter(contact_id=matter.contact_id) if matter.contact_id else qs.filter(contact_name=matter.contact_name)
+    return qs.aggregate(s=Sum("amount_due"))["s"] or Decimal(0)
+
+
 @login_required
 def xero_legal(request):
     """The Lawyers page. Attorneys see active matters; admins also see pending
@@ -2630,11 +2707,14 @@ def xero_legal(request):
     if not (request.user.is_lawyer or request.user.is_super_admin or request.user.is_administrator):
         return redirect("xero_dashboard")
 
-    matters = list(LegalMatter.objects.filter(tenant_id=tenant_id))
+    matters = list(LegalMatter.objects.filter(tenant_id=tenant_id)
+                   .select_related("attorney")
+                   .prefetch_related("step_states", "payment_plans", "payments"))
     is_manager = _can_manage_legal(request.user)
-    # Lawyers only ever see active matters; managers see everything.
+    # Lawyers see the matters they were given - active, and closed ones for the
+    # record; managers see everything, including those awaiting approval.
     if not is_manager:
-        matters = [m for m in matters if m.status == LegalMatter.ACTIVE]
+        matters = [m for m in matters if _seen_by_attorneys(m)]
 
     # Litigation step keys (anything past the Collections phase).
     litigation_keys = (legal_workflow.ALL_STEP_KEYS
@@ -2668,15 +2748,23 @@ def xero_legal(request):
                    for a in DebtorAllocation.objects.filter(tenant_id=tenant_id)
                    .select_related("administrator")}
     resolver = portfolio.CategoryResolver(tenant_id)
+    payments = legal_board.payments_by_contact(tenant_id, matters)
+    codes = _project_codes_by_matter(tenant_id, matters)
+    doc_counts = dict(LegalStepCommentAttachment.objects
+                      .filter(comment__matter__in=[m.id for m in matters])
+                      .values("comment__matter").annotate(n=Count("id"))
+                      .values_list("comment__matter", "n"))
     for m in matters:
         m.amount_owed = (owed_by_cid.get(m.contact_id)
                          or owed_by_name.get(m.contact_name) or Decimal(0))
         m.report_cid = m.contact_id or m.contact_name
         m.clerk_name = alloc_names.get(m.report_cid, "")
         m.category_name = resolver.resolve(m.report_cid, m.contact_name)[1]
+        _set_division(m, codes.get(m.id, ()))
+        m.doc_count = doc_counts.get(m.id, 0)
         visible = legal_workflow.visible_step_keys(m.summons_opposed, m.application_opposed)
         m.progress_total = len(visible)
-        done_keys = set(m.step_states.filter(done=True).values_list("step_key", flat=True))
+        done_keys = {s.step_key for s in m.step_states.all() if s.done}
         m.progress_done = len([k for k in visible if k in done_keys])
         # "Not yet in summons / application for payment" = no litigation step done.
         m.in_litigation = bool(done_keys & litigation_keys)
@@ -2701,6 +2789,48 @@ def xero_legal(request):
             active_pct.append((m.progress_done / m.progress_total * 100) if m.progress_total else 0)
             if not m.in_litigation:
                 not_in_litigation += 1
+        m.board = legal_board.board_state(
+            m, now, payments.get(m.id, []), m.days_idle,
+            owed=m.amount_owed if m.status == LegalMatter.ACTIVE else None)
+
+    # IMI / APS and attorney filters narrow everything below them.
+    division = request.GET.get("division") or ""
+    if division in (LegalMatter.IMI, LegalMatter.APS, "none"):
+        matters = [m for m in matters if (m.division_key or "none") == division]
+    else:
+        division = ""
+    attorney = request.GET.get("attorney") or ""
+    if attorney == "mine":
+        matters = [m for m in matters if m.attorney_id == request.user.id]
+    elif attorney == "none":
+        matters = [m for m in matters if not m.attorney_id]
+    elif attorney.isdigit():
+        matters = [m for m in matters if m.attorney_id == int(attorney)]
+    else:
+        attorney = ""
+    keep = urlencode([(k, v) for k, v in (("division", division), ("attorney", attorney)) if v])
+
+    # The tabs: one per stage, plus Action required across them and All. Each
+    # shows how many matters and how much they owe; Awaiting approval is FSA's.
+    tabs = []
+    for key, label, hint in legal_board.STAGES:
+        if key == legal_board.PENDING and not is_manager:
+            continue
+        rows = [m for m in matters if legal_board.in_tab(m.board, key)]
+        tabs.append({"key": key, "label": label, "hint": hint, "count": len(rows),
+                     "total": sum((m.amount_owed for m in rows), Decimal(0))})
+    tab_keys = {t["key"] for t in tabs}
+    tab = request.GET.get("tab") or ""
+    if tab not in tab_keys:
+        # Open on what needs doing, when anything does.
+        tab = legal_board.ACTION if any(m.board["actions"] for m in matters) else legal_board.ALL
+    current_tab = next(t for t in tabs if t["key"] == tab)
+    # Most urgent first: action reasons, then the biggest debts.
+    far = date.max
+    rows = sorted((m for m in matters if legal_board.in_tab(m.board, tab)),
+                  key=lambda m: (not m.board["actions"],
+                                 (m.board["next"] or {}).get("due") or far,
+                                 -m.amount_owed, (m.contact_name or "").lower()))
 
     active_count = sum(1 for m in matters if m.status == LegalMatter.ACTIVE)
 
@@ -2733,6 +2863,16 @@ def xero_legal(request):
     matters.sort(key=lambda m: (order.get(m.status, 9), (m.contact_name or "").lower()))
     return render(request, "xero/legal.html", {
         "matters": matters,
+        "rows": rows,
+        "tabs": tabs,
+        "tab": tab,
+        "current_tab": current_tab,
+        "action_count": sum(1 for m in matters if m.board["actions"]),
+        "keep": keep,
+        "division": division,
+        "attorney": attorney,
+        "attorneys": _attorney_choices(),
+        "today": timezone.localdate(),
         "is_manager": is_manager,
         "can_approve": _can_approve_legal(request.user),
         "can_work": _can_work_legal(request.user),
@@ -2761,7 +2901,8 @@ def xero_legal_matter(request, matter_id, client_form=None):
     tenant_id = _current_tenant_id(request)
     if not tenant_id:
         return redirect("xero_login")
-    matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first()
+    matter = (LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id)
+              .select_related("attorney").prefetch_related("payment_plans", "payments").first())
     if not matter:
         return redirect("xero_legal")
     can_work = _can_work_legal(request.user)
@@ -2769,9 +2910,12 @@ def xero_legal_matter(request, matter_id, client_form=None):
     # Administrators may view (read-only) for oversight.
     if not (can_work or is_manager or request.user.is_administrator):
         return redirect("xero_dashboard")
-    # Non-managers can't open a matter that isn't active yet.
-    if matter.status != LegalMatter.ACTIVE and not is_manager:
+    # Non-managers can't open a matter that isn't active yet; a closed one they
+    # worked on they can read, but no longer change.
+    if not is_manager and not _seen_by_attorneys(matter):
         return redirect("xero_legal")
+    if matter.status == LegalMatter.CLOSED and not is_manager:
+        can_work = False
 
     # The company's outstanding invoices, each with its full lifecycle (Xero
     # reminders + every InvoiceComment) so the attorney sees what moved over.
@@ -2792,6 +2936,22 @@ def xero_legal_matter(request, matter_id, client_form=None):
     # milestones); comments stay on their steps below and in the full report.
     milestones = [e for e in _legal_timeline(matter) if e["kind"] in ("step", "milestone")]
     client_info = LegalClientInfo.objects.filter(matter=matter).first()
+    # Where the matter stands: its stage, what needs doing, the payment plan.
+    now = timezone.now()
+    days_idle, _grace = reports.idle_days(matter, now)
+    payments = legal_board.payments_by_contact(tenant_id, [matter])[matter.id]
+    board = legal_board.board_state(matter, now, payments, days_idle,
+                                     owed=company_total if matter.status == LegalMatter.ACTIVE else None)
+    _set_division(matter, _project_codes_by_matter(tenant_id, [matter]).get(matter.id, ()),
+                  resolver=portfolio.CategoryResolver(tenant_id))
+    handed_over = timezone.localtime(matter.approved_at or matter.sent_at).date()
+    xero_payments = list(RecoveredInvoice.objects.filter(
+        tenant_id=tenant_id, recovered_at__date__gte=handed_over)
+        .filter(Q(contact_id=matter.contact_id) if matter.contact_id else Q(contact_name=matter.contact_name))
+        .order_by("-recovered_at"))
+    documents = [a for c in matter.step_comments.prefetch_related("attachments").all()
+                 for a in c.attachments.all()]
+    documents.sort(key=lambda a: a.uploaded_at, reverse=True)
     if client_form is None:
         client_form = LegalClientInfoForm(
             instance=client_info or LegalClientInfo(matter=matter, **_client_info_from_xero(tenant_id, matter)))
@@ -2811,6 +2971,425 @@ def xero_legal_matter(request, matter_id, client_form=None):
         "company_total": company_total,
         "company_invoice_count": len(company_invoices),
         "report_cid": matter.contact_id or matter.contact_name,
+        "board": board,
+        "next_task": board["next"],
+        "xero_payments": xero_payments,
+        "recorded_payments": list(matter.payments.all()),
+        "xero_received": sum((p.amount for p in xero_payments), Decimal(0)),
+        "recorded_received": sum((p.amount for p in matter.payments.all()), Decimal(0)),
+        "documents": documents,
+        "attorneys": _attorney_choices(),
+        "division_choices": LegalMatter.DIVISION_CHOICES,
+        "closure_reasons": [c for c in LegalMatter.CLOSURE_REASONS if c[0] not in ("returned", "withdrawn")],
+        "can_decide_closure": _can_approve_legal(request.user),
+        "can_assign": can_work or is_manager,
+        "path": legal_board.path_for(matter, board),
+        "past_plans": [p for p in matter.payment_plans.all() if p.status != LegalPaymentPlan.OPEN],
+        "can_update_status": (can_work or is_manager) and matter.status == LegalMatter.ACTIVE,
+        "plan_frequencies": LegalPaymentPlan.FREQUENCY_CHOICES,
+        "delivery_reasons": LegalMatter.DELIVERY_FAILED_REASONS,
+        "today": timezone.localdate(),
+    })
+
+
+def _status_matter(request, matter_id):
+    """The active matter a status change is for, if this user may change it."""
+    tenant_id = _current_tenant_id(request)
+    matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first() if tenant_id else None
+    if (not matter or matter.status != LegalMatter.ACTIVE
+            or not (_can_work_legal(request.user) or _can_manage_legal(request.user))):
+        messages.error(request, "You can't update this matter.")
+        return None
+    return matter
+
+
+def _back_to_status(matter):
+    return redirect(reverse("xero_legal_matter", args=[matter.id]) + "#status")
+
+
+def _parse_amount(raw):
+    try:
+        value = Decimal((raw or "").replace(" ", "").replace(",", "").replace("R", ""))
+    except Exception:
+        return None
+    return value.quantize(Decimal("0.01")) if value > 0 else None
+
+
+def _parse_date(raw):
+    try:
+        return date.fromisoformat((raw or "").strip())
+    except ValueError:
+        return None
+
+
+@login_required
+@require_POST
+def xero_legal_plan(request, matter_id):
+    """Record a promise to pay or a payment arrangement. It replaces any plan
+    still open on the matter."""
+    matter = _status_matter(request, matter_id)
+    if not matter:
+        return redirect("xero_legal")
+    kind = request.POST.get("kind")
+    amount = _parse_amount(request.POST.get("amount"))
+    first_date = _parse_date(request.POST.get("first_date"))
+    frequency = request.POST.get("frequency") or ""
+    raw_n = (request.POST.get("instalments") or "").strip()
+    instalments = int(raw_n) if raw_n.isdigit() and int(raw_n) > 0 else None
+    raw_total = (request.POST.get("total_amount") or "").strip()
+    total_amount = _parse_amount(raw_total) if raw_total else None
+    note = (request.POST.get("note") or "").strip()[:500]
+    problems = []
+    if kind not in (LegalPaymentPlan.PROMISE, LegalPaymentPlan.ARRANGEMENT):
+        problems.append("choose a promise or an arrangement")
+    if amount is None:
+        problems.append("enter the amount")
+    if first_date is None:
+        problems.append("enter the date")
+    if kind == LegalPaymentPlan.ARRANGEMENT and frequency not in dict(LegalPaymentPlan.FREQUENCY_CHOICES):
+        problems.append("choose how often they pay")
+    if raw_n and instalments is None:
+        problems.append("the number of instalments must be a whole number")
+    if raw_total and total_amount is None:
+        problems.append("the amount to settle must be a positive amount")
+    if problems:
+        messages.error(request, "Not saved: " + "; ".join(problems) + ".")
+        return _back_to_status(matter)
+    who = request.user.get_full_name() or request.user.email
+    now = timezone.now()
+    matter.payment_plans.filter(status=LegalPaymentPlan.OPEN).update(
+        status=LegalPaymentPlan.CANCELLED, closed_by=who, closed_at=now)
+    plan = LegalPaymentPlan.objects.create(
+        matter=matter, kind=kind, amount=amount, first_date=first_date,
+        frequency=frequency if kind == LegalPaymentPlan.ARRANGEMENT else "",
+        instalments=instalments if kind == LegalPaymentPlan.ARRANGEMENT else None,
+        total_amount=total_amount if kind == LegalPaymentPlan.ARRANGEMENT else None,
+        note=note, created_by=who)
+    if kind == LegalPaymentPlan.PROMISE:
+        headline = f"recorded a promise to pay R {amount:,.2f} by {first_date:%d %b %Y}"
+    else:
+        headline = (f"recorded a payment arrangement of R {amount:,.2f} "
+                    f"{plan.get_frequency_display().lower()} from {first_date:%d %b %Y}")
+        if instalments:
+            headline += f" ({instalments} instalments)"
+        if total_amount:
+            headline += f" to settle R {total_amount:,.2f}"
+    _status_log(matter, request.user, headline[0].upper() + headline[1:] + ".", note)
+    _log_notices_raised(request, notifications.notify_matter_update(matter, request.user, headline, detail=note))
+    messages.success(request, f"{plan.get_kind_display()} saved.")
+    return _back_to_status(matter)
+
+
+@login_required
+@require_POST
+def xero_legal_plan_close(request, matter_id):
+    """Close the open promise or arrangement: kept, broken or cancelled."""
+    matter = _status_matter(request, matter_id)
+    if not matter:
+        return redirect("xero_legal")
+    outcome = request.POST.get("outcome")
+    plan = matter.payment_plans.filter(status=LegalPaymentPlan.OPEN).first()
+    if plan and outcome in (LegalPaymentPlan.KEPT, LegalPaymentPlan.BROKEN, LegalPaymentPlan.CANCELLED):
+        plan.status = outcome
+        plan.closed_by = request.user.get_full_name() or request.user.email
+        plan.closed_at = timezone.now()
+        plan.save(update_fields=["status", "closed_by", "closed_at"])
+        word = {LegalPaymentPlan.KEPT: "kept", LegalPaymentPlan.BROKEN: "broken",
+                LegalPaymentPlan.CANCELLED: "cancelled"}[outcome]
+        _status_log(matter, request.user, f"Marked the {plan.get_kind_display().lower()} as {word}.")
+        _log_notices_raised(request, notifications.notify_matter_update(
+            matter, request.user, f"marked the {plan.get_kind_display().lower()} as {word}"))
+        messages.success(request, f"{plan.get_kind_display()} marked as {word}.")
+    return _back_to_status(matter)
+
+
+@login_required
+@require_POST
+def xero_legal_delivery_failed(request, matter_id):
+    """Record that the Letter of Demand could not be delivered, or clear it."""
+    matter = _status_matter(request, matter_id)
+    if not matter:
+        return redirect("xero_legal")
+    fields = ["delivery_failed", "delivery_failed_reason", "delivery_failed_note",
+              "delivery_failed_by", "delivery_failed_at", "updated_at"]
+    if request.POST.get("clear"):
+        matter.delivery_failed = False
+        matter.delivery_failed_reason = matter.delivery_failed_note = ""
+        matter.delivery_failed_by, matter.delivery_failed_at = "", None
+        matter.save(update_fields=fields)
+        _status_log(matter, request.user, "Cleared the unsuccessful delivery.")
+        _log_notices_raised(request, notifications.notify_matter_update(
+            matter, request.user, "cleared the unsuccessful delivery"))
+        messages.success(request, "Unsuccessful delivery cleared.")
+        return _back_to_status(matter)
+    reason = request.POST.get("reason") or ""
+    reasons = dict(LegalMatter.DELIVERY_FAILED_REASONS)
+    if reason not in reasons:
+        messages.error(request, "Choose why the delivery was unsuccessful.")
+        return _back_to_status(matter)
+    matter.delivery_failed = True
+    matter.delivery_failed_reason = reason
+    matter.delivery_failed_note = (request.POST.get("note") or "").strip()[:500]
+    matter.delivery_failed_by = request.user.get_full_name() or request.user.email
+    matter.delivery_failed_at = timezone.now()
+    matter.save(update_fields=fields)
+    _status_log(matter, request.user, f"Delivery unsuccessful: {reasons[reason]}.", matter.delivery_failed_note)
+    _log_notices_raised(request, notifications.notify_matter_update(
+        matter, request.user, f"recorded the delivery as unsuccessful ({reasons[reason]})",
+        detail=matter.delivery_failed_note))
+    messages.success(request, "Recorded as an unsuccessful delivery.")
+    return _back_to_status(matter)
+
+
+@login_required
+@require_POST
+def xero_legal_follow_up(request, matter_id):
+    """Diarise a follow-up on the matter, or clear it."""
+    matter = _status_matter(request, matter_id)
+    if not matter:
+        return redirect("xero_legal")
+    fields = ["follow_up_on", "follow_up_note", "follow_up_by", "updated_at"]
+    if request.POST.get("clear"):
+        matter.follow_up_on, matter.follow_up_note, matter.follow_up_by = None, "", ""
+        matter.follow_up_user = None
+        matter.save(update_fields=fields + ["follow_up_user"])
+        messages.success(request, "Follow-up cleared.")
+        return _back_to_status(matter)
+    when = _parse_date(request.POST.get("follow_up_on"))
+    if not when:
+        messages.error(request, "Choose the follow-up date.")
+        return _back_to_status(matter)
+    matter.follow_up_on = when
+    matter.follow_up_note = (request.POST.get("note") or "").strip()[:500]
+    matter.follow_up_by = request.user.get_full_name() or request.user.email
+    matter.follow_up_user = request.user
+    matter.save(update_fields=fields + ["follow_up_user"])
+    messages.success(request, f"Follow-up set for {when:%d %b %Y}.")
+    return _back_to_status(matter)
+
+
+@login_required
+@require_POST
+def xero_legal_payment(request, matter_id):
+    """Record a payment the attorneys received or saw proof of, with the proof.
+    Ticking 'settles the account' also puts the matter forward for closure."""
+    matter = _status_matter(request, matter_id)
+    if not matter:
+        return redirect("xero_legal")
+    amount = _parse_amount(request.POST.get("amount"))
+    paid_on = _parse_date(request.POST.get("paid_on"))
+    if amount is None or paid_on is None or paid_on > timezone.localdate():
+        messages.error(request, "Not saved: enter the amount and the date it was paid (not a future date).")
+        return _back_to_status(matter)
+    proof = request.FILES.get("proof")
+    payment = LegalPayment.objects.create(
+        matter=matter, amount=amount, paid_on=paid_on,
+        reference=(request.POST.get("reference") or "").strip()[:120],
+        note=(request.POST.get("note") or "").strip()[:500],
+        proof=proof or "", proof_name=(proof.name[:255] if proof else ""),
+        recorded_by=request.user.get_full_name() or request.user.email)
+    headline = f"recorded a payment of R {amount:,.2f} received on {paid_on:%d %b %Y}"
+    if payment.reference:
+        headline += f" (ref {payment.reference})"
+    _status_log(matter, request.user, headline[0].upper() + headline[1:] + ".", payment.note)
+    _log_notices_raised(request, notifications.notify_matter_update(
+        matter, request.user, headline, detail=payment.note,
+        files=[proof.name + " (proof of payment)"] if proof else ()))
+    messages.success(request, f"Payment of R {amount:,.2f} recorded.")
+    if request.POST.get("settles"):
+        return _close_or_recommend(request, matter, "settled",
+                                   "Settled in full - last payment recorded "
+                                   f"R {amount:,.2f} on {paid_on:%d %b %Y}.", ())
+    return _back_to_status(matter)
+
+
+def _close_matter(request, matter, reason, note, verified_by=""):
+    """Close the matter for a reason, closing any open promise or arrangement
+    with it, and tell the other side."""
+    who = request.user.get_full_name() or request.user.email
+    now = timezone.now()
+    label = dict(LegalMatter.CLOSURE_REASONS).get(reason, reason)
+    matter.payment_plans.filter(status=LegalPaymentPlan.OPEN).update(
+        status=LegalPaymentPlan.KEPT if reason == "settled" else LegalPaymentPlan.CANCELLED,
+        closed_by=who, closed_at=now)
+    matter.status = LegalMatter.CLOSED
+    matter.closure_reason, matter.closure_note = reason, note
+    matter.closed_by, matter.closed_at = request.user.email, now
+    matter.closure_requested_reason = matter.closure_requested_note = matter.closure_requested_by = ""
+    matter.closure_requested_at = None
+    matter.save()
+    _status_log(matter, request.user, f"Closed the matter: {label}." + (f" {verified_by}" if verified_by else ""), note)
+    _log_notices_raised(request, notifications.notify_matter_update(
+        matter, request.user, f"closed the matter ({label})", detail=note))
+
+
+def _close_or_recommend(request, matter, reason, note, files):
+    """A Super Admin closes the matter straight away. Anyone else recommends the
+    closure for FSA to approve - except a settlement Xero confirms, with nothing
+    left owing, which closes at once."""
+    label = dict(LegalMatter.CLOSURE_REASONS).get(reason, reason)
+    owed = _matter_owed(matter.tenant_id, matter)
+    if _can_approve_legal(request.user):
+        if files:
+            _status_log(matter, request.user, f"Supporting documents for closure ({label}).", files=files,
+                        nature="Closure support")
+        _close_matter(request, matter, reason, note)
+        messages.success(request, f"Matter closed: {label}.")
+        return redirect("xero_legal_matter", matter_id=matter.id)
+    if reason == "settled" and owed <= 0:
+        if files:
+            _status_log(matter, request.user, "Supporting documents for closure (settled).", files=files,
+                        nature="Closure support")
+        _close_matter(request, matter, reason, note, verified_by="Xero shows nothing owing.")
+        messages.success(request, "Settlement confirmed - Xero shows nothing owing - and the matter is closed.")
+        return redirect("xero_legal_matter", matter_id=matter.id)
+    who = request.user.get_full_name() or request.user.email
+    matter.closure_requested_reason, matter.closure_requested_note = reason, note
+    matter.closure_requested_by, matter.closure_requested_at = who, timezone.now()
+    matter.save(update_fields=["closure_requested_reason", "closure_requested_note",
+                               "closure_requested_by", "closure_requested_at", "updated_at"])
+    _status_log(matter, request.user, f"Recommended closing the matter: {label}.", note, files,
+                nature="Closure support")
+    detail = note + (f"\n\nXero still shows R {owed:,.2f} owing." if owed > 0 else "")
+    _log_notices_raised(request, notifications.notify_matter_update(
+        matter, request.user, f"recommended closing the matter ({label}) - your approval is needed",
+        detail=detail.strip(), files=[f.name for f in files], people=notifications._fsa_staff()))
+    messages.success(request, "Closure recommended - FSA has been asked to approve it.")
+    return _back_to_status(matter)
+
+
+@login_required
+@require_POST
+def xero_legal_close(request, matter_id):
+    """Close the matter, or recommend it be closed, with the reason and any
+    supporting documents."""
+    matter = _status_matter(request, matter_id)
+    if not matter:
+        return redirect("xero_legal")
+    reason = request.POST.get("reason") or ""
+    note = (request.POST.get("note") or "").strip()[:2000]
+    files = request.FILES.getlist("documents")
+    allowed = {k for k, _ in LegalMatter.CLOSURE_REASONS} - {"returned", "withdrawn"}
+    if reason not in allowed:
+        messages.error(request, "Choose why the matter should be closed.")
+        return _back_to_status(matter)
+    if reason != "settled" and not note:
+        messages.error(request, "Explain why the amount cannot be recovered - FSA needs it to approve the closure.")
+        return _back_to_status(matter)
+    return _close_or_recommend(request, matter, reason, note, files)
+
+
+@login_required
+@require_POST
+def xero_legal_closure_decide(request, matter_id):
+    """A Super Admin approves or declines a recommended closure."""
+    matter = _status_matter(request, matter_id)
+    if not matter:
+        return redirect("xero_legal")
+    if not _can_approve_legal(request.user) or not matter.closure_requested_at:
+        messages.error(request, "Only a Super Admin can decide on a recommended closure.")
+        return _back_to_status(matter)
+    reason = matter.closure_requested_reason
+    label = dict(LegalMatter.CLOSURE_REASONS).get(reason, reason)
+    if request.POST.get("decision") == "approve":
+        _close_matter(request, matter, reason, matter.closure_requested_note,
+                      verified_by=f"Recommended by {matter.closure_requested_by}; approved by FSA.")
+        messages.success(request, f"Closure approved - the matter is closed ({label}).")
+        return redirect("xero_legal_matter", matter_id=matter.id)
+    why = (request.POST.get("note") or "").strip()[:1000]
+    matter.closure_requested_reason = matter.closure_requested_note = matter.closure_requested_by = ""
+    matter.closure_requested_at = None
+    matter.save(update_fields=["closure_requested_reason", "closure_requested_note",
+                               "closure_requested_by", "closure_requested_at", "updated_at"])
+    _status_log(matter, request.user, f"Declined the recommended closure ({label}).", why)
+    _log_notices_raised(request, notifications.notify_matter_update(
+        matter, request.user, f"declined closing the matter ({label})", detail=why))
+    messages.success(request, "Closure declined - the matter stays open.")
+    return _back_to_status(matter)
+
+
+@login_required
+@require_POST
+def xero_legal_assign(request, matter_id):
+    """Set the responsible attorney, and whether the matter is IMI or APS."""
+    tenant_id = _current_tenant_id(request)
+    matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first() if tenant_id else None
+    if not matter or not (_can_work_legal(request.user) or _can_manage_legal(request.user)):
+        messages.error(request, "You can't update this matter.")
+        return redirect("xero_legal")
+    changes = []
+    raw = request.POST.get("attorney")
+    if raw is not None:
+        new = User.objects.filter(id=raw, role=Role.LAWYER, is_active=True).first() if raw.isdigit() else None
+        if (new.id if new else None) != matter.attorney_id:
+            matter.attorney = new
+            changes.append(f"made {new.get_full_name() or new.email} the responsible attorney"
+                           if new else "removed the responsible attorney")
+            if new and new.id != request.user.id:
+                _log_notices_raised(request, notifications.notify_matter_update(
+                    matter, request.user, "made you the responsible attorney for the matter", people=[new]))
+    raw = request.POST.get("division")
+    if raw is not None and raw in ("", LegalMatter.IMI, LegalMatter.APS) and raw != matter.division:
+        matter.division = raw
+        matter.division_set_by = (request.user.get_full_name() or request.user.email) if raw else ""
+        changes.append(f"set the matter as {raw.upper()}" if raw else "set IMI / APS back to automatic")
+    if changes:
+        matter.save(update_fields=["attorney", "division", "division_set_by", "updated_at"])
+        text = "; ".join(changes)
+        _status_log(matter, request.user, text[0].upper() + text[1:] + ".")
+        messages.success(request, "Saved.")
+    return redirect("xero_legal_matter", matter_id=matter.id)
+
+
+@login_required
+def xero_legal_diary(request):
+    """The legal diary: every dated task on the active matters - overdue first,
+    then today, this week and later - so nothing depends on memory."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    user = request.user
+    if not (user.is_lawyer or user.is_super_admin or user.is_administrator):
+        return redirect("xero_dashboard")
+    now = timezone.now()
+    today = timezone.localdate()
+    matters = list(LegalMatter.objects.filter(tenant_id=tenant_id, status=LegalMatter.ACTIVE)
+                   .select_related("attorney")
+                   .prefetch_related("step_states", "payment_plans", "payments"))
+    payments = legal_board.payments_by_contact(tenant_id, matters)
+    owed = {}
+    for m in matters:
+        owed[m.id] = _matter_owed(tenant_id, m)
+    who = request.GET.get("who") or ("mine" if user.is_lawyer else "all")
+    groups = {"overdue": [], "today": [], "week": [], "later": []}
+    for m in matters:
+        days_idle, _g = reports.idle_days(m, now)
+        state = legal_board.board_state(m, now, payments.get(m.id, []), days_idle, owed=owed[m.id])
+        for t in state["tasks"]:
+            if who == "mine":
+                fsa_task = t["owner"] == legal_board.OWNER_FSA
+                if user.is_lawyer and (fsa_task or m.attorney_id not in (None, user.id)):
+                    continue
+                if not user.is_lawyer and not fsa_task:
+                    continue
+            item = dict(t, matter=m, stage_label=state["stage_label"])
+            if t["flag"] or (t["due"] and t["due"] < today):
+                groups["overdue"].append(item)
+            elif t["due"] == today:
+                groups["today"].append(item)
+            elif t["due"] and t["due"] <= today + timedelta(days=7):
+                groups["week"].append(item)
+            elif t["due"] and t["due"] <= today + timedelta(days=45):
+                groups["later"].append(item)
+    for items in groups.values():
+        items.sort(key=lambda i: (i["due"] or today, (i["matter"].contact_name or "").lower()))
+    sections = [("overdue", "Overdue / needs attention now", groups["overdue"]),
+                ("today", "Due today", groups["today"]),
+                ("week", "Next 7 days", groups["week"]),
+                ("later", "Later", groups["later"])]
+    return render(request, "xero/legal_diary.html", {
+        "sections": sections, "who": who, "today": today,
+        "total": sum(len(v) for v in groups.values()),
     })
 
 
@@ -2883,7 +3462,7 @@ def xero_legal_toggle_opposed(request, matter_id):
         return redirect("xero_login")
     matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first()
     which = (request.POST.get("which") or "").strip()
-    if matter and _can_work_legal(request.user) and which in ("summons", "application"):
+    if matter and _can_change_matter(matter, request.user) and which in ("summons", "application"):
         field = "summons_opposed" if which == "summons" else "application_opposed"
         new_val = not getattr(matter, field)
         setattr(matter, field, new_val)
@@ -2908,7 +3487,8 @@ def xero_legal_step_toggle(request, matter_id):
         return redirect("xero_login")
     matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first()
     step_key = (request.POST.get("step_key") or "").strip()
-    if matter and _can_work_legal(request.user) and step_key in legal_workflow.ALL_STEP_KEYS:
+    if matter and _can_change_matter(matter, request.user) and step_key in legal_workflow.ALL_STEP_KEYS:
+        _claim_matter(matter, request.user)
         st, _ = LegalStep.objects.get_or_create(matter=matter, step_key=step_key)
         if step_key == legal_workflow.LOD_HAND_DELIVERY and not st.done:
             # Only complete with the signed acknowledgement of receipt on file.
@@ -2941,8 +3521,9 @@ def xero_legal_step_comment(request, matter_id):
     text = (request.POST.get("text") or "").strip()
     nature = (request.POST.get("nature") or "").strip()[:120]
     files = request.FILES.getlist("documents")
-    if (matter and _can_work_legal(request.user) and (text or files)
+    if (matter and _can_change_matter(matter, request.user) and (text or files)
             and step_key in legal_workflow.ALL_STEP_KEYS):
+        _claim_matter(matter, request.user)
         comment = LegalStepComment.objects.create(
             matter=matter, step_key=step_key, author=request.user,
             author_name=request.user.get_full_name() or request.user.email,

@@ -6,6 +6,7 @@ Sends through the same Graph email path as everything else. Any send failure is
 logged and swallowed — a notification must never block the approval itself.
 """
 import logging
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -203,17 +204,20 @@ def _attorneys():
     return list(User.objects.filter(role=Role.LAWYER, is_active=True))
 
 
-def notify_matter_update(matter, actor, headline, detail="", files=()):
+def notify_matter_update(matter, actor, headline, detail="", files=(), people=None):
     """Tell the other side that a matter moved on, so neither has to keep checking.
 
     When an attorney comments, uploads or changes a step, FSA (the Super Admins)
     are told; when FSA does, the attorneys are. The person who made the change is
     never told about it. One email for everyone concerned, plus an in-app notice
-    each that opens on the matter. Returns the notices raised."""
+    each that opens on the matter. ``people`` overrides who is told (a closure
+    waiting for approval goes to the Super Admins whoever recommended it).
+    Returns the notices raised."""
     from .models import DebtorNotice
     name = matter.contact_name or matter.contact_id
     who = actor.get_full_name() or actor.email
-    people = _fsa_staff() if getattr(actor, "is_lawyer", False) else _attorneys()
+    if people is None:
+        people = _fsa_staff() if getattr(actor, "is_lawyer", False) else _matter_attorneys(matter)
     people = [u for u in people if u.id != actor.id]
     if not people:
         return []
@@ -234,3 +238,148 @@ def notify_matter_update(matter, actor, headline, detail="", files=()):
         "url": _matter_url(matter), "link_text": "view the matter on the Debtor System",
     }, people)
     return notices
+
+
+# ---- the legal diary: payment checks, missed payments, follow-ups, daily list ----
+
+def _matter_attorneys(matter):
+    """The attorney responsible for the matter, or with nobody set, all of them."""
+    a = getattr(matter, "attorney", None)
+    return [a] if a and a.is_active else _attorneys()
+
+
+def _remind_once(key, matter=None):
+    """True the first time a reminder key is seen; it is then recorded, so the
+    hourly run never sends the same reminder twice."""
+    from .models import LegalReminder
+    _obj, created = LegalReminder.objects.get_or_create(key=key[:120], defaults={"matter": matter})
+    return created
+
+
+def _diary_notice(matter, people, subject, paragraphs, text):
+    """One in-app notice each and one email each for a diary reminder."""
+    from .models import DebtorNotice
+    notices = _raise_notices(matter, people, DebtorNotice.KIND_LEGAL_REMINDER, "Legal diary", text)
+    _email(subject, {"paragraphs": paragraphs, "url": _matter_url(matter),
+                     "link_text": "open the matter on the Debtor System"}, people)
+    return notices
+
+
+def _money(v):
+    return f"R {v:,.2f}"
+
+
+def _long_day(d):
+    return f"{d.day} {d:%B %Y}"
+
+
+def send_legal_diary_reminders(now=None, digest_hour=7):
+    """The legal diary's automatic reminders. Safe to run every hour: each goes
+    out once.
+
+      * on the date a promised payment falls due (and a couple of days before an
+        instalment), the responsible attorney is asked to check it was paid;
+      * a payment that has not come in a few days after its date is flagged to
+        the attorney and FSA;
+      * a follow-up goes to whoever diarised it, on its date;
+      * from ``digest_hour`` each morning, every attorney and Super Admin gets one
+        email listing what is overdue and due today for them.
+
+    Returns how many reminders went out (counting each digest once)."""
+    from . import legal_board, reports
+    from .models import LegalMatter, LegalPaymentPlan
+    now = now or timezone.now()
+    today = timezone.localtime(now).date()
+    matters = list(LegalMatter.objects.filter(status=LegalMatter.ACTIVE)
+                   .select_related("attorney", "follow_up_user")
+                   .prefetch_related("step_states", "payment_plans", "payments"))
+    payments = {}
+    for tenant in {m.tenant_id for m in matters}:
+        payments.update(legal_board.payments_by_contact(
+            tenant, [m for m in matters if m.tenant_id == tenant]))
+    sent = 0
+    states = []
+    for m in matters:
+        days_idle, _grace = reports.idle_days(m, now)
+        state = legal_board.board_state(m, now, payments.get(m.id, []), days_idle)
+        states.append((m, state))
+        name = m.contact_name or m.contact_id
+        plan, pr = state["plan"], state["progress"]
+        if plan and not pr["paid_in_full"]:
+            if pr["behind"]:
+                missed = pr["first_missed"]
+                n = missed["n"] if missed else 1
+                if _remind_once(f"plan:{plan.id}:missed:{n}", m):
+                    what = ("the promised payment" if plan.kind == LegalPaymentPlan.PROMISE
+                            else f"instalment {n}")
+                    due = missed["date"] if missed else plan.first_date
+                    people = {u.id: u for u in _matter_attorneys(m) + _fsa_staff()}
+                    _diary_notice(m, list(people.values()), f"Payment missed – {name}", [
+                        format_html("<strong>{}</strong> has not paid {} that was due on {}. {} has been "
+                                    "received since the {} was agreed, and the account is {} behind.",
+                                    name, what, _long_day(due), _money(pr["received"]),
+                                    plan.get_kind_display().lower(), _money(pr["shortfall"])),
+                        "The matter is now flagged as needing action on the Lawyers page. Please follow up "
+                        "with the debtor and record the next step.",
+                    ], f"Payment missed: {name} has not paid {what} due on {_long_day(due)} "
+                       f"({_money(pr['shortfall'])} behind).")
+                    sent += 1
+            elif pr["next_date"]:
+                lead = 0 if plan.kind == LegalPaymentPlan.PROMISE else legal_board.INSTALMENT_REMINDER_DAYS
+                if (pr["next_date"] - timedelta(days=lead) <= today
+                        and _remind_once(f"plan:{plan.id}:check:{pr['next_n']}", m)):
+                    what = ("The promised payment" if plan.kind == LegalPaymentPlan.PROMISE
+                            else f"Instalment {pr['next_n']}")
+                    when = pr["next_date"]
+                    _diary_notice(m, _matter_attorneys(m), f"Payment due – {name}", [
+                        format_html("{} of {} from <strong>{}</strong> is due on {}.",
+                                    what, _money(pr["next_amount"]), name, _long_day(when)),
+                        "Please check that it has been received. Payments into FSA's account show on the "
+                        "matter once Xero has them; a payment made to you can be recorded on the matter.",
+                    ], f"Payment due: {what.lower()} of {_money(pr['next_amount'])} from {name} "
+                       f"on {_long_day(when)}.")
+                    sent += 1
+        if (m.follow_up_on and m.follow_up_on <= today
+                and _remind_once(f"follow_up:{m.id}:{m.follow_up_on.isoformat()}", m)):
+            people = ([m.follow_up_user] if m.follow_up_user and m.follow_up_user.is_active
+                      else _matter_attorneys(m))
+            note = m.follow_up_note or "a follow-up on this matter"
+            _diary_notice(m, people, f"Follow-up due – {name}", [
+                format_html("This is your reminder to follow up on <strong>{}</strong>: {}.", name, note),
+            ], f"Follow-up due on {name}: {note}")
+            sent += 1
+
+    if timezone.localtime(now).hour >= digest_hour:
+        sent += _send_diary_digests(states, today)
+    return sent
+
+
+def _send_diary_digests(states, today):
+    """Each attorney's and Super Admin's list for the day: what is overdue and
+    what falls due today on their matters. Nothing to report, no email."""
+    from . import legal_board
+    people = {u.id: u for u in _attorneys() + _fsa_staff()}
+    sent = 0
+    for user in people.values():
+        lines = []
+        for m, state in states:
+            mine = user.is_lawyer and m.attorney_id in (None, user.id)
+            for t in state["tasks"]:
+                if not (t["flag"] or t["due"] == today):
+                    continue
+                fsa_task = t["owner"] == legal_board.OWNER_FSA
+                if (fsa_task and user.is_super_admin) or (not fsa_task and mine):
+                    when = "overdue" if t["overdue"] else "today"
+                    lines.append(f"{m.contact_name or m.contact_id}: {t['text']} ({when})")
+        if not lines or not user.email or not _remind_once(f"digest:{user.id}:{today.isoformat()}"):
+            continue
+        n = len(lines)
+        _email(f"Your legal diary for {_long_day(today)}", {
+            "paragraphs": [f"There {'is' if n == 1 else 'are'} {n} item{'' if n == 1 else 's'} on the "
+                           "legal matters that need your attention today."],
+            "documents": lines, "list_label": "Today's list",
+            "url": settings.SITE_BASE_URL + reverse("xero_legal_diary"),
+            "link_lead": "You can", "link_text": "open the legal diary on the Debtor System",
+        }, [user])
+        sent += 1
+    return sent

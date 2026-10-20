@@ -5,7 +5,7 @@
 {% endfor %}{% if quote %}{{ quote_label|default:"Comment" }}:
     {{ quote }}
 
-{% endif %}{% if documents %}Documents added:
+{% endif %}{% if documents %}{{ list_label|default:"Documents added" }}:
 {% for d in documents %}  - {{ d }}
 {% endfor %}
 {% endif %}{{ link_lead|default:"You can" }} {{ link_text|default:"view the matter on the Debtor System" }}: {{ url }}
