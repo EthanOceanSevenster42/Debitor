@@ -36,6 +36,11 @@
     .alloc-label { color: var(--text-muted); font-weight: 600; white-space: nowrap; }
     .alloc-form { display: inline; }
     .alloc-select { font-size: 12px; padding: 2px 6px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; max-width: 220px; }
+    .alloc-pick { font: inherit; font-size: 12px; padding: 2px 22px 2px 6px; border: 1px solid #d1d5db; border-radius: 5px; cursor: pointer;
+                  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; color: #1f2937;
+                  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2364748b'/%3E%3C/svg%3E") no-repeat right 7px center; }
+    .alloc-pick:hover { border-color: #94a3b8; }
+    .alloc-pick:disabled { opacity: .6; cursor: wait; }
     .alloc-name { font-weight: 600; color: var(--brand-teal); }
     .alloc-name.unalloc { color: var(--text-muted); font-weight: 400; font-style: italic; }
     .alloc-status { font-size: 11px; margin-left: 6px; white-space: nowrap; }
@@ -849,66 +854,101 @@ function unlogContact(invoiceId, actionType, el) {
       .catch(function () { if (el) refreshDebtorStatement(el); });
 }
 
-// --- Allocate a debtor to an administrator (live, no page reload) ---
-// Posts the inline form and shows a brief ✓ next to the dropdown instead of
-// reloading the whole page.
-function allocateDebtor(sel) {
-    var form = sel.form;
-    if (!form) return;
-    var status = form.querySelector('.alloc-status');
-    if (status) { status.textContent = '…'; status.className = 'alloc-status saving'; }
-    var data = new FormData(form);
-    sel.disabled = true;
-    fetch(form.action, {
+// --- Category and clerk for a debtor (live, no page reload) ---
+// Each row shows only the current value; clicking it puts the page's one
+// shared menu in its place. Sending a menu per debtor made the page several
+// megabytes on a big book.
+var PICK_URLS = {category: "{% url 'xero_debtor_category' %}", administrator: "{% url 'xero_allocate_debtor' %}"};
+var PICK_CSRF = "{{ csrf_token }}";
+var PICK_NEXT = "{{ current_full_path|escapejs }}";
+
+function openPicker(btn) {
+    var tpl = document.getElementById('pick-' + btn.dataset.kind);
+    if (!tpl) return;
+    var sel = tpl.content.firstElementChild.cloneNode(true);
+    sel.value = btn.dataset.value || '';
+    btn.hidden = true;
+    btn.after(sel);
+    sel.focus();
+    var done = false;
+    function close() { if (done) return; done = true; sel.remove(); btn.hidden = false; }
+    sel.addEventListener('blur', close);
+    sel.addEventListener('keydown', function (e) { if (e.key === 'Escape') { close(); btn.focus(); } });
+    sel.addEventListener('change', function () {
+        var value = sel.value, label = sel.options[sel.selectedIndex].text;
+        done = true;
+        sel.remove();
+        btn.hidden = false;
+        savePick(btn, value, label);
+    });
+}
+
+function savePick(btn, value, label) {
+    var box = btn.closest('.alloc-form');
+    var status = box.querySelector('.alloc-status');
+    var hint = box.querySelector('.cat-hint');
+    var data = new FormData();
+    data.append('csrfmiddlewaretoken', PICK_CSRF);
+    data.append('contact_id', btn.dataset.cid);
+    data.append('contact_name', btn.dataset.name);
+    data.append('next', PICK_NEXT);
+    data.append(btn.dataset.kind, value);
+    var before = {value: btn.dataset.value, label: btn.textContent};
+    btn.dataset.value = value;
+    btn.textContent = label;
+    btn.disabled = true;
+    if (status) { status.textContent = 'Saving'; status.className = 'alloc-status saving'; }
+    fetch(PICK_URLS[btn.dataset.kind], {
         method: 'POST', body: data, credentials: 'same-origin',
         headers: {'X-Requested-With': 'XMLHttpRequest'},
     }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, data: d}; }); })
       .then(function (res) {
-          sel.disabled = false;
+          btn.disabled = false;
           if (!res.ok || !res.data.ok) throw new Error((res.data && res.data.error) || 'Failed');
+          if (hint && btn.dataset.kind === 'category') {
+              hint.textContent = res.data.source === 'manual' ? '' :
+                  (res.data.source === 'auto' ? '(auto: ' + res.data.name + ')' : '(uncategorised)');
+          }
           if (status) {
-              status.textContent = '✓ Saved';
+              status.textContent = 'Saved';
               status.className = 'alloc-status saved';
               setTimeout(function () { status.textContent = ''; status.className = 'alloc-status'; }, 1800);
           }
       })
       .catch(function (err) {
-          sel.disabled = false;
-          if (status) { status.textContent = '⚠ ' + (err.message || 'Error'); status.className = 'alloc-status error'; }
+          btn.disabled = false;
+          btn.dataset.value = before.value;
+          btn.textContent = before.label;
+          if (status) { status.textContent = 'Not saved: ' + (err.message || 'error'); status.className = 'alloc-status error'; }
       });
 }
 
-// --- Place a debtor in a category (live, no page reload) ---
-// "Automatic" clears the hand-set category, so the keyword match (or
-// Uncategorised) applies again; the hint shows what that resolved to.
-function categoriseDebtor(sel) {
-    var form = sel.form;
-    if (!form) return;
-    var status = form.querySelector('.alloc-status');
-    var hint = form.querySelector('.cat-hint');
-    if (status) { status.textContent = '…'; status.className = 'alloc-status saving'; }
-    var data = new FormData(form);
-    sel.disabled = true;
-    fetch(form.action, {
-        method: 'POST', body: data, credentials: 'same-origin',
-        headers: {'X-Requested-With': 'XMLHttpRequest'},
-    }).then(function (r) { return r.json().then(function (d) { return {ok: r.ok, data: d}; }); })
-      .then(function (res) {
-          sel.disabled = false;
-          if (!res.ok || !res.data.ok) throw new Error((res.data && res.data.error) || 'Failed');
-          if (hint) hint.textContent = res.data.source === 'manual' ? '' :
-              (res.data.source === 'auto' ? '(auto: ' + res.data.name + ')' : '(uncategorised)');
-          if (status) {
-              status.textContent = '✓ Saved';
-              status.className = 'alloc-status saved';
-              setTimeout(function () { status.textContent = ''; status.className = 'alloc-status'; }, 1800);
-          }
-      })
-      .catch(function (err) {
-          sel.disabled = false;
-          if (status) { status.textContent = '⚠ ' + (err.message || 'Error'); status.className = 'alloc-status error'; }
-      });
-}
+// --- Row actions (reopen, move back, mark closed) ---
+// One form built on demand instead of a form and token in every row.
+document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.action-cell [data-action]');
+    if (!btn) return;
+    e.stopPropagation();
+    if (btn.dataset.confirm && !confirm(btn.dataset.confirm)) return;
+    var form = document.createElement('form');
+    form.method = 'post';
+    form.action = btn.dataset.action;
+    var fields = {csrfmiddlewaretoken: PICK_CSRF, contact_id: btn.dataset.cid, contact_name: btn.dataset.name};
+    if (btn.dataset.next) fields.next = PICK_NEXT;
+    Object.keys(fields).forEach(function (k) {
+        var i = document.createElement('input');
+        i.type = 'hidden'; i.name = k; i.value = fields[k];
+        form.appendChild(i);
+    });
+    document.body.appendChild(form);
+    btn.disabled = true;
+    form.submit();
+}, true);
+
+document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.alloc-pick');
+    if (btn) { e.stopPropagation(); openPicker(btn); }
+}, true);   // capture: each row's meta line stops clicks bubbling to the row
 
 // --- Per-row kebab menu ---
 function closeAllRowMenus() {
@@ -1124,6 +1164,8 @@ document.addEventListener('click', function (e) {
             </tr>
         </thead>
         <tbody>
+            {% if can_categorise %}<template id="pick-category"><select class="alloc-select" name="category"><option value="">Automatic</option>{% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></template>{% endif %}
+            {% if can_allocate %}<template id="pick-administrator"><select class="alloc-select" name="administrator"><option value="">&mdash; Unallocated &mdash;</option>{% for a in admins %}<option value="{{ a.id }}">{{ a.get_full_name|default:a.email }}</option>{% endfor %}</select></template>{% endif %}
             {% for d in debtors %}
             <tr class="debtor-row" id="row-{{ d.index }}" onclick="toggleDebtor({{ d.index }})">
                 <td>
@@ -1136,21 +1178,13 @@ document.addEventListener('click', function (e) {
                     <div class="alloc-line" onclick="event.stopPropagation();">
                         <span class="alloc-label">Category:</span>
                         {% if can_categorise %}
-                        <form method="post" action="{% url 'xero_debtor_category' %}" class="alloc-form">
-                            {% csrf_token %}
-                            <input type="hidden" name="contact_id" value="{{ d.cid }}">
-                            <input type="hidden" name="contact_name" value="{{ d.name }}">
-                            <input type="hidden" name="next" value="{{ current_full_path }}">
-                            <select name="category" class="alloc-select" onchange="categoriseDebtor(this)"
-                                    title="Automatic = matched on the debtor's name / project codes">
-                                <option value="">Automatic</option>
-                                {% for c in categories %}
-                                <option value="{{ c.id }}"{% if d.category_source == 'manual' and c.id == d.category_id %} selected{% endif %}>{{ c.name }}</option>
-                                {% endfor %}
-                            </select>
+                        <span class="alloc-form">
+                            <button type="button" class="alloc-pick" data-kind="category" data-cid="{{ d.cid }}" data-name="{{ d.name }}"
+                                    data-value="{% if d.category_source == 'manual' %}{{ d.category_id }}{% endif %}"
+                                    title="Automatic = matched on the debtor's name / project codes">{% if d.category_source == 'manual' %}{{ d.category_name }}{% else %}Automatic{% endif %}</button>
                             <span class="cat-hint">{% if d.category_source == 'auto' %}(auto: {{ d.category_name }}){% elif not d.category_source %}(uncategorised){% endif %}</span>
                             <span class="alloc-status" aria-live="polite"></span>
-                        </form>
+                        </span>
                         {% else %}
                         <span class="cat-chip{% if not d.category_id %} none{% endif %}">{{ d.category_name }}</span>
                         {% endif %}
@@ -1158,19 +1192,11 @@ document.addEventListener('click', function (e) {
                     <div class="alloc-line" onclick="event.stopPropagation();">
                         <span class="alloc-label">Allocated to:</span>
                         {% if can_allocate %}
-                        <form method="post" action="{% url 'xero_allocate_debtor' %}" class="alloc-form">
-                            {% csrf_token %}
-                            <input type="hidden" name="contact_id" value="{{ d.cid }}">
-                            <input type="hidden" name="contact_name" value="{{ d.name }}">
-                            <input type="hidden" name="next" value="{{ current_full_path }}">
-                            <select name="administrator" class="alloc-select" onchange="allocateDebtor(this)">
-                                <option value="">&mdash; Unallocated &mdash;</option>
-                                {% for a in admins %}
-                                <option value="{{ a.id }}"{% if a.id == d.allocated_to_id %} selected{% endif %}>{{ a.get_full_name|default:a.email }}</option>
-                                {% endfor %}
-                            </select>
+                        <span class="alloc-form">
+                            <button type="button" class="alloc-pick" data-kind="administrator" data-cid="{{ d.cid }}" data-name="{{ d.name }}"
+                                    data-value="{{ d.allocated_to_id|default:'' }}">{{ d.allocated_to_name|default:"— Unallocated —" }}</button>
                             <span class="alloc-status" aria-live="polite"></span>
-                        </form>
+                        </span>
                         {% else %}
                         <span class="alloc-name {% if not d.allocated_to_name %}unalloc{% endif %}">{{ d.allocated_to_name|default:"Unallocated" }}</span>
                         {% endif %}
@@ -1180,18 +1206,18 @@ document.addEventListener('click', function (e) {
                 <td class="status-cell">
                     {% if handover_page %}
                         {% if d.legal_status == 'active' %}
-                            <a class="hd-summary" style="text-decoration:none;" href="{% url 'xero_legal_matter' d.legal_id %}" onclick="event.stopPropagation();" title="With the lawyers — open the workflow">&#9878; With lawyers</a>
+                            <a class="hd-summary" style="text-decoration:none;" href="{% url 'xero_legal_matter' d.legal_id %}" onclick="event.stopPropagation();" title="With the lawyers — open the workflow">With lawyers</a>
                         {% elif d.legal_status == 'pending' %}
-                            <span class="hd-summary partial" title="Sent to the lawyers — awaiting Super Admin approval">&#9878; Pending approval</span>
+                            <span class="hd-summary partial" title="Sent to the lawyers — awaiting Super Admin approval">Pending approval</span>
                         {% elif d.legal_status == 'closed' %}
-                            <span class="hd-summary none" title="Lawyer matter closed / withdrawn">&#9878; Lawyers: closed</span>
+                            <span class="hd-summary none" title="Lawyer matter closed / withdrawn">Lawyers: closed</span>
                         {% else %}
-                            <span class="hd-summary none" title="Not yet sent to the lawyers">&#9878; Not sent to lawyers</span>
+                            <span class="hd-summary none" title="Not yet sent to the lawyers">Not sent to lawyers</span>
                         {% endif %}
                     {% endif %}
                     {# One combined badge each — names which channels are missed / due. #}
-                    {% if d.missed_labels %}<span class="missed-badge" title="No contact logged in time for: {{ d.missed_labels|join:', ' }}">&#9888; Missed: {{ d.missed_labels|join:", " }}</span>{% endif %}
-                    {% if d.due_labels %}<span class="call-badge" title="Follow-up due for: {{ d.due_labels|join:', ' }}">&#9200; Due: {{ d.due_labels|join:", " }}</span>{% endif %}
+                    {% if d.missed_labels %}<span class="missed-badge" title="No contact logged in time for: {{ d.missed_labels|join:', ' }}">Missed: {{ d.missed_labels|join:", " }}</span>{% endif %}
+                    {% if d.due_labels %}<span class="call-badge" title="Follow-up due for: {{ d.due_labels|join:', ' }}">Due: {{ d.due_labels|join:", " }}</span>{% endif %}
                 </td>
                 {% for cell in d.bucket_list %}
                 <td class="num{% if cell.amount == 0 %} zero{% endif %}">
@@ -1201,14 +1227,10 @@ document.addEventListener('click', function (e) {
                 <td class="num total-cell"><strong>R&nbsp;{{ d.total|floatformat:2|intcomma }}</strong></td>
                 <td class="action-cell">
                     <a class="debtor-action-btn report" href="{% url 'xero_company_report' %}?cid={{ d.cid|urlencode }}"
-                       target="_blank" rel="noopener" onclick="event.stopPropagation();">&#128196; Report</a>
+                       target="_blank" rel="noopener" onclick="event.stopPropagation();">Report</a>
                     {% if closed_page and can_manage %}
-                    <form method="post" action="{% url 'xero_reopen_debtor' %}" class="debtor-action" onclick="event.stopPropagation();">
-                        {% csrf_token %}
-                        <input type="hidden" name="contact_id" value="{{ d.cid }}">
-                        <input type="hidden" name="contact_name" value="{{ d.name }}">
-                        <button type="submit" class="debtor-action-btn reopen">&#8634; Reopen</button>
-                    </form>
+                    <button type="button" class="debtor-action-btn reopen" data-action="{% url 'xero_reopen_debtor' %}"
+                            data-cid="{{ d.cid }}" data-name="{{ d.name }}">Reopen</button>
                     {% elif not write_off_page and not closed_page %}
                     {% if handover_page %}
                         {% if can_handover_manage %}
@@ -1216,35 +1238,25 @@ document.addEventListener('click', function (e) {
                         management call, so it stays with a Super Admin even
                         where an administrator may make the handover. ({# #} is
                         single-line only, hence the comment tag.){% endcomment %}
-                        <form method="post" action="{% url 'xero_handover_undo_debtor' %}" class="debtor-action" onclick="event.stopPropagation();"
-                              onsubmit="return confirm('Move {{ d.name|escapejs }} and all its handover invoices back to the Debtors Action page? This client will also be set to never auto-hand over, so nothing bounces straight back.');">
-                            {% csrf_token %}
-                            <input type="hidden" name="contact_id" value="{{ d.cid }}">
-                            <input type="hidden" name="contact_name" value="{{ d.name }}">
-                            <input type="hidden" name="next" value="{{ current_full_path }}">
-                            <button type="submit" class="debtor-action-btn moveback">&#8634; Move client back</button>
-                        </form>
+                        <button type="button" class="debtor-action-btn moveback" data-action="{% url 'xero_handover_undo_debtor' %}"
+                                data-cid="{{ d.cid }}" data-name="{{ d.name }}" data-next="1"
+                                data-confirm="Move {{ d.name }} and all its handover invoices back to the Debtors Action page? This client will also be set to never auto-hand over, so nothing bounces straight back.">Move client back</button>
                         {% endif %}
                     {% elif can_hand_over %}
                     <button type="button" class="debtor-action-btn handover"
                             onclick="event.stopPropagation(); openHandoverAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
-                            title="Immediately move ALL this client's open invoices to the Handover page (no waiting for the aging threshold)">&#9889; Hand over client</button>
+                            title="Immediately move ALL this client's open invoices to the Handover page (no waiting for the aging threshold)">Hand over client</button>
                     {% endif %}
                     {# Write-off is open to every role; the two either side stay Super Admin. #}
                     {% if can_write_off %}
                     <button type="button" class="debtor-action-btn write-off"
                             onclick="event.stopPropagation(); openWriteOffAllModal('{{ d.cid|escapejs }}', '{{ d.name|escapejs }}');"
-                            title="Write off ALL this client's open invoices">&#8855; Write off client</button>
+                            title="Write off ALL this client's open invoices">Write off client</button>
                     {% endif %}
                     {% if can_manage %}
-                    <form method="post" action="{% url 'xero_close_debtor' %}" class="debtor-action" onclick="event.stopPropagation();"
-                          onsubmit="return confirm('Mark {{ d.name|escapejs }} as closed? They will move to the Closed Debtors page.');">
-                        {% csrf_token %}
-                        <input type="hidden" name="contact_id" value="{{ d.cid }}">
-                        <input type="hidden" name="contact_name" value="{{ d.name }}">
-                        <input type="hidden" name="next" value="{{ current_full_path }}">
-                        <button type="submit" class="debtor-action-btn close">&#10005; Mark closed</button>
-                    </form>
+                    <button type="button" class="debtor-action-btn close" data-action="{% url 'xero_close_debtor' %}"
+                            data-cid="{{ d.cid }}" data-name="{{ d.name }}" data-next="1"
+                            data-confirm="Mark {{ d.name }} as closed? They will move to the Closed Debtors page.">Mark closed</button>
                     {% endif %}
                     {% endif %}
                 </td>
