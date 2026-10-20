@@ -214,9 +214,16 @@ def send_template_message(phone, template_name, params, broadcast_name="debtor_r
     except requests.RequestException as exc:
         raise WatiError("Could not reach WhatsApp: %s" % exc) from exc
 
+    if r.status_code in (401, 403):
+        # The account, not the message: WATI no longer accepts the system's API
+        # token (401) or has blocked the account's API access (403).
+        log.error("WATI refused the API token (HTTP %s) - renew WATI_TOKEN", r.status_code)
+        raise WatiError("WhatsApp is not connected: the WATI account refused the system's login "
+                        "(HTTP %s). Nothing was sent. Ask a Super Admin to renew the WATI API "
+                        "token; until then, contact the debtor by call or email." % r.status_code)
     if r.status_code >= 400:
         raise WatiError("WhatsApp rejected the send (HTTP %s): %s"
-                        % (r.status_code, (r.text or "")[:300]))
+                        % (r.status_code, (r.text or "")[:300] or "no reason given"))
     try:
         body = r.json() or {}
     except ValueError:
