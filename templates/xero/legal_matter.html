@@ -29,7 +29,7 @@
     .ws-check input[type=checkbox] { width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--brand-teal, #0E7C7B); }
     .ws-check input[disabled] { cursor: not-allowed; }
     .ws-check.ro { font-size: 17px; color: #64748b; }
-    .ws-num.var { display: inline-flex; align-items: center; justify-content: center; width: 18px; color: #b45309; font-size: 15px; }
+    .ws-num.var { display: inline-block; width: 18px; flex: 0 0 18px; }
     .ws-title { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
     .ws-label { font-size: 14px; color: #1f2937; font-weight: 600; }
     .ws-done-meta { font-size: 12px; color: #15803d; font-weight: 600; }
@@ -132,7 +132,7 @@
     .tlh-att a { font-size: 12px; text-decoration: none; margin-right: 4px; }
     .tlh-who { font-size: 10px; color: #94a3b8; margin-top: 3px; }
     /* Stage path: where the matter is on its way through */
-    .mp-path { display: flex; margin: 14px 0 6px; overflow-x: auto; }
+    .mp-path { display: flex; margin: 14px 0 6px; overflow: hidden; }
     .mp-step { flex: 1 1 0; min-width: 118px; position: relative; padding: 8px 10px 8px 22px; font-size: 12.5px; font-weight: 700;
                color: #64748b; background: #f1f5f9; text-align: center; white-space: nowrap;
                clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%); margin-right: -6px; }
@@ -140,6 +140,11 @@
     .mp-step.done { background: #ccebe8; color: #115e59; }
     .mp-step.skipped { background: #f1f5f9; color: #94a3b8; text-decoration: line-through; }
     .mp-step.current { background: var(--brand-teal, #0E7C7B); color: #fff; }
+    @media (max-width: 720px) {
+        .mp-path { flex-wrap: wrap; gap: 4px; }
+        .mp-step, .mp-step:first-child { flex: 1 1 calc(50% - 4px); min-width: 0; margin: 0; padding: 6px 8px;
+                                         clip-path: none; border-radius: 6px; font-size: 12px; white-space: normal; }
+    }
     .mp-side { font-size: 13px; color: #334155; margin: 4px 0 0; }
     .mp-side .lt-stage { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; margin-right: 6px; background: #fefce8; color: #854d0e; border: 1px solid #fde68a; }
     .mp-side .lt-stage.no_trace { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
@@ -161,12 +166,28 @@
     .st-fig .k { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; font-weight: 700; }
     .st-fig .v { font-size: 14px; font-weight: 700; color: #1f2937; }
     .st-fig .v.bad { color: #b91c1c; } .st-fig .v.good { color: #047857; }
-    .st-plan-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .st-plan-actions form { display: inline; }
+    .st-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .st-plan-actions form { display: flex; margin: 0; }
+    .st-plan-actions .btn, .st-tools .ws-add-btn, .st-flag .btn, .mp-closure .btn, .st-form-actions .btn {
+        display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 14px;
+        font-size: 13px; font-weight: 600; line-height: 1; border-radius: 8px; box-sizing: border-box; white-space: nowrap; margin: 0; }
     .st-flag { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border: 1px solid #fed7aa; background: #fff7ed; color: #7c2d12; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
     .st-flag.fu { border-color: #bfdbfe; background: #eff6ff; color: #1e3a8a; }
     .st-flag form { margin-left: auto; }
     .st-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+    .st-tools .ws-add-btn { background: #fff; border: 1px solid #cbd5e1; color: #334155; }
+    .st-tools .ws-add-btn:hover { border-color: var(--brand-teal, #0E7C7B); color: var(--brand-teal, #0E7C7B); }
+    @media (max-width: 720px) {
+        .st-tools { display: grid; grid-template-columns: 1fr 1fr; }
+        .st-tools .ws-add-btn { width: 100%; white-space: normal; height: auto; min-height: 38px; padding: 6px 10px; text-align: center; }
+        .st-plan-actions { display: grid; grid-template-columns: repeat(3, 1fr); }
+        .st-plan-actions form, .st-plan-actions .btn { width: 100%; }
+        .st-figs { gap: 8px 16px; }
+        .st-flag form { margin-left: 0; }
+        .mp-closure form { display: flex; width: 100%; }
+        .mp-closure input[type=text] { min-width: 0; flex: 1; }
+        .st-form-actions .btn { flex: 1; }
+    }
     .st-form { margin-top: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; }
     .st-form h3 { font-size: 13.5px; margin: 0 0 8px; color: var(--navy); }
     .st-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 14px; }
@@ -255,7 +276,7 @@ function toggleAdd(btn) {
                 {% csrf_token %}
                 <input type="hidden" name="matter_id" value="{{ matter.id }}">
                 <input type="hidden" name="next" value="{% url 'xero_legal_matter' matter.id %}">
-                <button type="submit" class="btn btn-secondary btn-sm" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0;">&#8617; Bring back from lawyers</button>
+                <button type="submit" class="btn btn-secondary btn-sm" style="background:#ecfdf5; color:#065f46; border-color:#a7f3d0;">Bring back from lawyers</button>
             </form>
             {% endif %}
             <a class="btn btn-secondary btn-sm" href="{% url 'xero_legal' %}">&larr; All matters</a>
@@ -265,7 +286,7 @@ function toggleAdd(btn) {
 
     {# ---- Where the matter stands ---- #}
     <div class="mp-path" aria-label="Stage">
-        {% for p in path %}<div class="mp-step {{ p.state }}"{% if p.state == 'current' %} aria-current="step"{% endif %}>{% if p.state == 'done' %}&#10003; {% endif %}{{ p.label }}</div>{% endfor %}
+        {% for p in path %}<div class="mp-step {{ p.state }}"{% if p.state == 'current' %} aria-current="step"{% endif %}>{% if p.state == 'done' %}{% endif %}{{ p.label }}</div>{% endfor %}
     </div>
     <p class="mp-side">{% if board.stage in 'promise arrangement no_trace pending' %}<span class="lt-stage {{ board.stage }}">{{ board.stage_label }}</span>{% endif %}{{ board.detail }}</p>
 
@@ -301,11 +322,11 @@ function toggleAdd(btn) {
 
     {% if matter.closure_requested_at %}
     <div class="mp-closure">
-        &#9873; <strong>Closure recommended:</strong> {{ matter.get_closure_requested_reason_display }} &mdash; by {{ matter.closure_requested_by }} on {{ matter.closure_requested_at|date:"j M Y" }}.
+        <strong>Closure recommended:</strong> {{ matter.get_closure_requested_reason_display }} &mdash; by {{ matter.closure_requested_by }} on {{ matter.closure_requested_at|date:"j M Y" }}.
         {% if matter.closure_requested_note %}<div style="margin-top:4px;">{{ matter.closure_requested_note|linebreaksbr }}</div>{% endif %}
         {% if can_decide_closure %}
         <div>
-            <form method="post" action="{% url 'xero_legal_closure_decide' matter.id %}" onsubmit="return confirm('Close this matter?');">{% csrf_token %}<input type="hidden" name="decision" value="approve"><button class="btn btn-primary btn-sm" type="submit">&#10003; Approve &amp; close</button></form>
+            <form method="post" action="{% url 'xero_legal_closure_decide' matter.id %}" onsubmit="return confirm('Close this matter?');">{% csrf_token %}<input type="hidden" name="decision" value="approve"><button class="btn btn-primary btn-sm" type="submit">Approve &amp; close</button></form>
             <form method="post" action="{% url 'xero_legal_closure_decide' matter.id %}">{% csrf_token %}<input type="hidden" name="decision" value="decline"><input type="text" name="note" placeholder="Why it stays open (sent to the attorneys)" maxlength="1000"><button class="btn btn-secondary btn-sm" type="submit">Decline</button></form>
         </div>
         {% else %}<div class="muted-sm" style="margin-top:4px;">Waiting for a Super Admin at FSA to approve it.</div>{% endif %}
@@ -314,7 +335,7 @@ function toggleAdd(btn) {
 
     {% if board.actions %}
     <div class="mp-act">
-        <h2>&#9888; Action required</h2>
+        <h2>Action required</h2>
         <ul style="margin:0; padding-left:18px;">{% for a in board.actions %}<li><span class="who">{{ a.owner }}</span>{{ a.text }}{% if a.overdue %} <span class="muted-sm">(overdue since {{ a.due|date:"j M" }})</span>{% endif %}</li>{% endfor %}</ul>
     </div>
     {% endif %}
@@ -343,7 +364,7 @@ function toggleAdd(btn) {
                 <div class="st-fig"><div class="k">Paid so far</div><div class="v{% if pr.paid_in_full %} good{% endif %}">R&nbsp;{{ pr.received|floatformat:2|intcomma }}</div></div>
                 {% if pr.balance is not None %}<div class="st-fig"><div class="k">Still to pay</div><div class="v">R&nbsp;{{ pr.balance|floatformat:2|intcomma }}</div></div>{% endif %}
                 {% if pr.behind %}<div class="st-fig"><div class="k">Behind by</div><div class="v bad">R&nbsp;{{ pr.shortfall|floatformat:2|intcomma }}</div></div>
-                {% elif pr.paid_in_full %}<div class="st-fig"><div class="k">Status</div><div class="v good">&#10003; Paid in full</div></div>
+                {% elif pr.paid_in_full %}<div class="st-fig"><div class="k">Status</div><div class="v good">Paid in full</div></div>
                 {% elif pr.next_date %}<div class="st-fig"><div class="k">Next payment</div><div class="v">R&nbsp;{{ pr.next_amount|floatformat:2|intcomma }} on {{ pr.next_date|date:"j M Y" }}</div></div>{% endif %}
             </div>
             {% if plan.note %}<div class="muted-sm">{{ plan.note }}</div>{% endif %}
@@ -356,8 +377,8 @@ function toggleAdd(btn) {
             {% endif %}
             {% if can_update_status %}
             <div class="st-plan-actions">
-                <form method="post" action="{% url 'xero_legal_plan_close' matter.id %}">{% csrf_token %}<input type="hidden" name="outcome" value="kept"><button class="btn btn-primary btn-sm" type="submit">&#10003; Mark kept</button></form>
-                <form method="post" action="{% url 'xero_legal_plan_close' matter.id %}" onsubmit="return confirm('Mark this {{ plan.get_kind_display|lower }} as broken? The matter goes back to its place in the workflow.');">{% csrf_token %}<input type="hidden" name="outcome" value="broken"><button class="btn btn-secondary btn-sm" type="submit">&#10007; Mark broken</button></form>
+                <form method="post" action="{% url 'xero_legal_plan_close' matter.id %}">{% csrf_token %}<input type="hidden" name="outcome" value="kept"><button class="btn btn-primary btn-sm" type="submit">Mark kept</button></form>
+                <form method="post" action="{% url 'xero_legal_plan_close' matter.id %}" onsubmit="return confirm('Mark this {{ plan.get_kind_display|lower }} as broken? The matter goes back to its place in the workflow.');">{% csrf_token %}<input type="hidden" name="outcome" value="broken"><button class="btn btn-secondary btn-sm" type="submit">Mark broken</button></form>
                 <form method="post" action="{% url 'xero_legal_plan_close' matter.id %}" onsubmit="return confirm('Cancel this {{ plan.get_kind_display|lower }}?');">{% csrf_token %}<input type="hidden" name="outcome" value="cancelled"><button class="btn btn-secondary btn-sm" type="submit">Cancel it</button></form>
             </div>
             {% endif %}
@@ -367,7 +388,7 @@ function toggleAdd(btn) {
 
         {% if matter.delivery_failed %}
         <div class="st-flag">
-            <span>&#128683; <strong>Unsuccessful delivery:</strong> {{ matter.get_delivery_failed_reason_display }}{% if matter.delivery_failed_note %} &mdash; {{ matter.delivery_failed_note }}{% endif %}
+            <span><strong>Unsuccessful delivery:</strong> {{ matter.get_delivery_failed_reason_display }}{% if matter.delivery_failed_note %} &mdash; {{ matter.delivery_failed_note }}{% endif %}
                 <span class="muted-sm">({{ matter.delivery_failed_by }}, {{ matter.delivery_failed_at|date:"j M Y" }})</span></span>
             {% if can_update_status %}<form method="post" action="{% url 'xero_legal_delivery_failed' matter.id %}">{% csrf_token %}<input type="hidden" name="clear" value="1"><button class="btn btn-secondary btn-sm" type="submit">Clear</button></form>{% endif %}
         </div>
@@ -375,7 +396,7 @@ function toggleAdd(btn) {
 
         {% if matter.follow_up_on %}
         <div class="st-flag fu">
-            <span>&#128197; <strong>Follow-up {% if matter.follow_up_on <= today %}due{% else %}on{% endif %} {{ matter.follow_up_on|date:"j M Y" }}</strong>{% if matter.follow_up_note %} &mdash; {{ matter.follow_up_note }}{% endif %}
+            <span><strong>Follow-up {% if matter.follow_up_on <= today %}due{% else %}on{% endif %} {{ matter.follow_up_on|date:"j M Y" }}</strong>{% if matter.follow_up_note %} &mdash; {{ matter.follow_up_note }}{% endif %}
                 <span class="muted-sm">(set by {{ matter.follow_up_by }})</span></span>
             {% if can_update_status %}<form method="post" action="{% url 'xero_legal_follow_up' matter.id %}">{% csrf_token %}<input type="hidden" name="clear" value="1"><button class="btn btn-secondary btn-sm" type="submit">Done / clear</button></form>{% endif %}
         </div>
@@ -385,10 +406,10 @@ function toggleAdd(btn) {
         <div class="st-tools">
             <button type="button" class="ws-add-btn" onclick="showStatusForm('st-promise')">+ Promise to pay</button>
             <button type="button" class="ws-add-btn" onclick="showStatusForm('st-arrangement')">+ Payment arrangement</button>
-            {% if not matter.delivery_failed %}<button type="button" class="ws-add-btn" onclick="showStatusForm('st-delivery')">&#128683; Delivery unsuccessful / no trace</button>{% endif %}
-            <button type="button" class="ws-add-btn" onclick="showStatusForm('st-followup')">&#128197; {% if matter.follow_up_on %}Change follow-up{% else %}Set a follow-up{% endif %}</button>
-            <button type="button" class="ws-add-btn" onclick="showStatusForm('st-payment')">&#128176; Record a payment received</button>
-            {% if not matter.closure_requested_at %}<button type="button" class="ws-add-btn" onclick="showStatusForm('st-close')">&#9873; {% if can_decide_closure %}Close the matter{% else %}Recommend closing{% endif %}</button>{% endif %}
+            {% if not matter.delivery_failed %}<button type="button" class="ws-add-btn" onclick="showStatusForm('st-delivery')">Delivery unsuccessful / no trace</button>{% endif %}
+            <button type="button" class="ws-add-btn" onclick="showStatusForm('st-followup')">{% if matter.follow_up_on %}Change follow-up{% else %}Set a follow-up{% endif %}</button>
+            <button type="button" class="ws-add-btn" onclick="showStatusForm('st-payment')">Record a payment received</button>
+            {% if not matter.closure_requested_at %}<button type="button" class="ws-add-btn" onclick="showStatusForm('st-close')">{% if can_decide_closure %}Close the matter{% else %}Recommend closing{% endif %}</button>{% endif %}
         </div>
 
         <form method="post" action="{% url 'xero_legal_payment' matter.id %}" class="st-form" id="st-payment" enctype="multipart/form-data" hidden>
@@ -482,7 +503,7 @@ function toggleAdd(btn) {
         <table class="sch">
             <thead><tr><th>Date</th><th>Source</th><th>Details</th><th class="r">Amount</th></tr></thead>
             <tbody>
-                {% for p in recorded_payments %}<tr><td>{{ p.paid_on|date:"j M Y" }}</td><td><span class="pay-src att">Recorded</span></td><td>{{ p.reference|default:"" }}{% if p.note %} {{ p.note }}{% endif %} <span class="muted-sm">by {{ p.recorded_by }}</span>{% if p.proof %} &middot; <a href="{{ p.proof.url }}" target="_blank" rel="noopener">&#128206; proof</a>{% endif %}</td><td class="r">R&nbsp;{{ p.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
+                {% for p in recorded_payments %}<tr><td>{{ p.paid_on|date:"j M Y" }}</td><td><span class="pay-src att">Recorded</span></td><td>{{ p.reference|default:"" }}{% if p.note %} {{ p.note }}{% endif %} <span class="muted-sm">by {{ p.recorded_by }}</span>{% if p.proof %} &middot; <a href="{{ p.proof.url }}" target="_blank" rel="noopener">proof</a>{% endif %}</td><td class="r">R&nbsp;{{ p.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
                 {% for p in xero_payments %}<tr><td>{{ p.recovered_at|date:"j M Y" }}</td><td><span class="pay-src">Xero</span></td><td>Invoice {{ p.invoice_number|default:p.invoice_id }}</td><td class="r">R&nbsp;{{ p.amount|floatformat:2|intcomma }}</td></tr>{% endfor %}
             </tbody>
         </table>
@@ -494,7 +515,7 @@ function toggleAdd(btn) {
     <div class="st-card" id="documents">
         <h2>Documents ({{ documents|length }})</h2>
         {% if documents %}
-        <ul class="doc-list">{% for a in documents %}<li><a href="{{ a.file.url }}" target="_blank" rel="noopener">&#128206; {{ a.original_name|default:"document" }}</a>{% if a.nature %}<span class="muted-sm">{{ a.nature }}</span>{% endif %}<span class="muted-sm">{{ a.comment.author_name }}</span><span class="when">{{ a.uploaded_at|date:"j M Y" }}</span></li>{% endfor %}</ul>
+        <ul class="doc-list">{% for a in documents %}<li><a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.original_name|default:"document" }}</a>{% if a.nature %}<span class="muted-sm">{{ a.nature }}</span>{% endif %}<span class="muted-sm">{{ a.comment.author_name }}</span><span class="when">{{ a.uploaded_at|date:"j M Y" }}</span></li>{% endfor %}</ul>
         {% else %}<p class="muted-sm" style="margin:6px 0 0;">No documents yet. Attach them to a step below, or with a payment or closure.</p>{% endif %}
     </div>
 
@@ -510,7 +531,7 @@ function toggleAdd(btn) {
         <div class="ci-head">
             <h2>Client details for legal proceedings</h2>
             {% if client_info %}<span class="ci-meta">Last updated by {{ client_info.updated_by|default:"&mdash;" }} &middot; {{ client_info.updated_at|date:"j M Y, H:i" }}</span>{% endif %}
-            {% if can_edit_client %}<button type="button" class="ws-add-btn ci-edit-btn" onclick="toggleClientForm()">{% if client_info %}&#9998; Edit details{% else %}+ Capture details{% endif %}</button>{% endif %}
+            {% if can_edit_client %}<button type="button" class="ws-add-btn ci-edit-btn" onclick="toggleClientForm()">{% if client_info %}Edit details{% else %}+ Capture details{% endif %}</button>{% endif %}
         </div>
         {% if client_info %}
         <dl class="ci-grid">
@@ -531,7 +552,7 @@ function toggleAdd(btn) {
         {% if can_edit_client %}
         <form method="post" action="{% url 'xero_legal_client_info' matter.id %}" class="ci-form" id="ci-form"{% if not client_form.errors %} hidden{% endif %}>
             {% csrf_token %}
-            {% if not client_info %}<p class="ci-note">&#9432; Pre-filled from Xero where it had the detail &mdash; please check it before saving.</p>{% endif %}
+            {% if not client_info %}<p class="ci-note">Pre-filled from Xero where it had the detail &mdash; please check it before saving.</p>{% endif %}
             <div class="ci-fields">
                 {% for f in client_fields %}
                 <label class="ci-field{% if f.name in 'directors domicilium_address postal_address notes' %} wide{% endif %}{% if f.errors %} bad{% endif %}">
@@ -552,8 +573,8 @@ function toggleAdd(btn) {
     <div class="inv-card">
         <div class="inv-head">
             <button type="button" class="inv-toggle" onclick="document.getElementById('inv-body').classList.toggle('open'); this.classList.toggle('open');">
-                &#9656; Outstanding invoices &mdash; {{ company_invoice_count }} invoice{{ company_invoice_count|pluralize }}, R&nbsp;{{ company_total|floatformat:2|intcomma }} due</button>
-            <a class="btn btn-secondary btn-sm" href="{% url 'xero_company_report' %}?cid={{ report_cid|urlencode }}" target="_blank" rel="noopener">&#128196; Full company report</a>
+                Outstanding invoices &mdash; {{ company_invoice_count }} invoice{{ company_invoice_count|pluralize }}, R&nbsp;{{ company_total|floatformat:2|intcomma }} due</button>
+            <a class="btn btn-secondary btn-sm" href="{% url 'xero_company_report' %}?cid={{ report_cid|urlencode }}" target="_blank" rel="noopener">Full company report</a>
         </div>
         <div class="inv-body" id="inv-body">
             {% for row in company_invoices %}
@@ -594,7 +615,7 @@ function toggleAdd(btn) {
                   onsubmit="return confirm('Switch {{ sec.title|escapejs }} to {% if sec.opposed %}Unopposed{% else %}Opposed{% endif %}? The steps for that branch will be shown (existing comments and ticks are kept).');">
                 {% csrf_token %}
                 <input type="hidden" name="which" value="{{ sec.which }}">
-                <button type="submit" class="pill-btn">&#8646; Switch to {% if sec.opposed %}Unopposed{% else %}Opposed{% endif %}</button>
+                <button type="submit" class="pill-btn">Switch to {% if sec.opposed %}Unopposed{% else %}Opposed{% endif %}</button>
             </form>
             {% endif %}
         </div>
@@ -602,7 +623,7 @@ function toggleAdd(btn) {
         <div class="wf-step {% if st.done %}done{% endif %} {% if st.is_variation %}variation{% endif %}{% if st.delivery.outstanding and not st.done %} late{% endif %}" id="step-{{ st.key }}">
             <div class="ws-head">
                 {% if st.is_variation %}
-                    <span class="ws-num var" title="Comment section">&#9998;</span>
+                    <span class="ws-num var" aria-hidden="true"></span>
                 {% elif can_work and st.delivery and not st.done and not st.has_proof %}
                     <span class="ws-check" title="Upload the signed proof of delivery below to complete this step"><input type="checkbox" disabled></span>
                 {% elif can_work %}
@@ -612,15 +633,15 @@ function toggleAdd(btn) {
                         <input type="checkbox" onchange="this.form.submit()" {% if st.done %}checked{% endif %} title="{% if st.done %}Mark as not done{% else %}Mark as done{% endif %}">
                     </form>
                 {% else %}
-                    <span class="ws-check ro">{% if st.done %}&#9745;{% else %}&#9744;{% endif %}</span>
+                    <span class="ws-check"><input type="checkbox" disabled{% if st.done %} checked{% endif %} aria-label="{% if st.done %}Done{% else %}Not done{% endif %}"></span>
                 {% endif %}
                 <div class="ws-title">
                     <span class="ws-label">{{ st.label }}</span>
                     {% if st.is_variation %}<span class="ws-var-tag">Updates &amp; variations</span>{% endif %}
-                    {% if st.done and st.done_by %}<span class="ws-done-meta">&#10003; {{ st.done_by }}{% if st.done_at %} &middot; {{ st.done_at|date:"j M Y, H:i" }}{% endif %}</span>{% endif %}
+                    {% if st.done and st.done_by %}<span class="ws-done-meta">{{ st.done_by }}{% if st.done_at %} &middot; {{ st.done_at|date:"j M Y, H:i" }}{% endif %}</span>{% endif %}
                 </div>
                 <div class="ws-tools">
-                    {% if st.comments %}<span class="ws-count" title="{{ st.comments|length }} comment{{ st.comments|length|pluralize }}">&#128172; {{ st.comments|length }}</span>{% endif %}
+                    {% if st.comments %}<span class="ws-count">{{ st.comments|length }} comment{{ st.comments|length|pluralize }}</span>{% endif %}
                     {% if can_work %}
                     <button type="button" class="ws-add-btn" onclick="toggleAdd(this)" aria-expanded="false">+ {% if st.is_variation %}Add update{% else %}Comment / document{% endif %}</button>
                     {% endif %}
@@ -630,8 +651,8 @@ function toggleAdd(btn) {
             {% if st.delivery and not st.done %}
             <div class="ws-body">
                 <div class="lod-due{% if st.delivery.outstanding %} late{% endif %}">
-                    {% if st.delivery.outstanding %}&#9888; <strong>Outstanding since {{ st.delivery.due_at|date:"j M Y" }}.</strong>
-                    {% elif st.delivery.due_at %}&#9203; Due on <strong>{{ st.delivery.due_at|date:"j M Y" }}</strong> (7 days after the Letter of Demand was sent).
+                    {% if st.delivery.outstanding %}<strong>Outstanding since {{ st.delivery.due_at|date:"j M Y" }}.</strong>
+                    {% elif st.delivery.due_at %}Due on <strong>{{ st.delivery.due_at|date:"j M Y" }}</strong> (7 days after the Letter of Demand was sent).
                     {% else %}Becomes due 7 days after the Letter of Demand is sent by email or sheriff.{% endif %}
                     Arrange for an FSA inspector to deliver the Letter of Demand to the facility by hand and get a signed acknowledgement of receipt. This step stays open until the signed proof is uploaded.
                 </div>
@@ -643,7 +664,7 @@ function toggleAdd(btn) {
                     <input type="hidden" name="nature" value="Signed proof of delivery">
                     <label class="lp-file"><span>Signed proof of delivery</span><input type="file" name="documents" required></label>
                     <label class="lp-note"><span>Note (optional)</span><input type="text" name="text" placeholder="e.g. delivered by inspector J. Smith, signed by the manager" maxlength="500"></label>
-                    <button type="submit" class="btn btn-primary btn-sm">&#10003; Upload proof &amp; confirm delivered</button>
+                    <button type="submit" class="btn btn-primary btn-sm">Upload proof &amp; confirm delivered</button>
                 </form>
                 {% endif %}
             </div>
@@ -655,7 +676,7 @@ function toggleAdd(btn) {
                 <div class="ws-comment">
                     <div class="who"><strong>{{ c.author_name|default:"&mdash;" }}</strong> &middot; {{ c.created_at|date:"j M Y, H:i" }}</div>
                     {% if c.text %}<div class="txt">{{ c.text|linebreaksbr }}</div>{% endif %}
-                    {% if c.attachments.all %}<div class="ws-att">{% for a in c.attachments.all %}<a href="{{ a.file.url }}" target="_blank" rel="noopener">&#128206; {{ a.original_name|default:"document" }}{% if a.nature %} <span class="nat">{{ a.nature }}</span>{% endif %}</a>{% endfor %}</div>{% endif %}
+                    {% if c.attachments.all %}<div class="ws-att">{% for a in c.attachments.all %}<a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.original_name|default:"document" }}{% if a.nature %} <span class="nat">{{ a.nature }}</span>{% endif %}</a>{% endfor %}</div>{% endif %}
                 </div>
                 {% endfor %}
             </div>
@@ -667,7 +688,7 @@ function toggleAdd(btn) {
                 <input type="hidden" name="step_key" value="{{ st.key }}">
                 <textarea name="text" rows="2" placeholder="{% if st.is_variation %}Describe the variation or update&hellip;{% else %}Write a comment&hellip;{% endif %}"></textarea>
                 <div class="ws-add-row">
-                    <label class="ws-file">&#128206; Attach documents <input type="file" name="documents" multiple></label>
+                    <label class="ws-file">Attach documents <input type="file" name="documents" multiple></label>
                     <input type="text" name="nature" maxlength="120" class="ws-nature" placeholder="What is it? e.g. Summons, Court order">
                     <span class="ws-add-actions">
                         <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAdd(this)">Cancel</button>

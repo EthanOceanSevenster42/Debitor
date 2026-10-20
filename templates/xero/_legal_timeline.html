@@ -6,9 +6,9 @@
         <span class="tlh-dot"></span>
         <div class="tlh-info">
             <div class="tlh-date">{{ e.date|date:"M j, Y" }}</div>
-            <div class="tlh-title">{% if e.kind == 'step' %}&#10003;{% elif e.kind == 'milestone' %}&#9873;{% elif e.kind == 'route' %}&#8646;{% else %}&#128172;{% endif %} {{ e.title|truncatechars:36 }}</div>
+            <div class="tlh-title">{{ e.title|truncatechars:36 }}</div>
             {% if e.detail %}<div class="tlh-detail">{{ e.detail|truncatechars:52 }}</div>{% endif %}
-            {% if e.attachments %}<div class="tlh-att">{% for a in e.attachments %}<a href="{{ a.url }}" target="_blank" rel="noopener" title="{{ a.name }}">&#128206;</a>{% endfor %}</div>{% endif %}
+            {% if e.attachments %}<div class="tlh-att">{% for a in e.attachments %}<a href="{{ a.url }}" target="_blank" rel="noopener" title="{{ a.name }}">{{ a.name|truncatechars:24 }}</a>{% endfor %}</div>{% endif %}
             <div class="tlh-who">{{ e.who }}</div>
         </div>
     </div>

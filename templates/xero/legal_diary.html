@@ -52,7 +52,7 @@
             <a class="btn btn-secondary btn-sm" href="{% url 'xero_legal_matter' i.matter.id %}">Open &rarr;</a>
         </div>
         {% empty %}
-        <div class="dy-empty">{% if key == 'overdue' %}&#10003; Nothing overdue.{% else %}Nothing.{% endif %}</div>
+        <div class="dy-empty">{% if key == 'overdue' %}Nothing overdue.{% else %}Nothing.{% endif %}</div>
         {% endfor %}
     </div>
     {% endfor %}

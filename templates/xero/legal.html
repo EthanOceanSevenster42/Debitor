@@ -121,7 +121,7 @@ function filterMatters(q) {
     <div class="flex-between">
         <h1 class="page-title">Lawyers &mdash; Legal Matters</h1>
         <div style="display:flex; gap:8px;">
-            <a class="btn btn-primary btn-sm" href="{% url 'xero_legal_diary' %}">&#128197; Diary</a>
+            <a class="btn btn-primary btn-sm" href="{% url 'xero_legal_diary' %}">Diary</a>
             {% if not user.is_lawyer %}<a class="btn btn-secondary btn-sm" href="{% url 'xero_handover' %}">&larr; Handover</a>{% endif %}
         </div>
     </div>
@@ -187,7 +187,7 @@ function filterMatters(q) {
             <tr class="{% if m.board.actions %}needs{% endif %}" data-search="{{ m.contact_name|default:m.contact_id|lower }} {{ m.clerk_name|lower }} {{ m.category_name|lower }} {{ m.division_label|lower }} {{ m.attorney.get_full_name|lower }}">
                 <td data-k="Debtor">
                     {% if m.status != 'pending' or is_manager %}<a class="lt-name" href="{% url 'xero_legal_matter' m.id %}">{{ m.contact_name|default:m.contact_id }}</a>{% else %}<span class="lt-name">{{ m.contact_name|default:m.contact_id }}</span>{% endif %}
-                    {% if m.doc_count %}<span class="lt-docs" title="{{ m.doc_count }} document{{ m.doc_count|pluralize }} on the matter">&#128206; {{ m.doc_count }}</span>{% endif %}
+                    {% if m.doc_count %}<span class="lt-docs" title="{{ m.doc_count }} document{{ m.doc_count|pluralize }} on the matter">{{ m.doc_count }} doc{{ m.doc_count|pluralize }}</span>{% endif %}
                     <div class="lt-sub">{% if m.division_key %}<span class="lt-div {{ m.division_key }}{% if m.division_auto %} auto{% endif %}" title="{% if m.division_auto %}Worked out from the Xero project codes - confirm it on the matter{% else %}Set by {{ m.division_set_by }}{% endif %}">{{ m.division_label }}</span> {% endif %}{{ m.category_name }}{% if not user.is_lawyer %} &middot; Clerk: {{ m.clerk_name|default:"none" }}{% endif %}</div>
                     <div class="lt-sub">Attorney: {% if m.attorney %}{{ m.attorney.get_full_name|default:m.attorney.email }}{% else %}<em>not assigned</em>{% endif %}</div>
                 </td>
@@ -195,7 +195,7 @@ function filterMatters(q) {
                 <td data-k="Where it stands">
                     <span class="lt-stage {{ m.board.stage }}">{{ m.board.stage_label }}</span>
                     <div class="lt-detail">{{ m.board.detail }}</div>
-                    {% if m.status == 'active' and not m.staleness and m.lod_grace_until %}<div class="lt-sub" title="The debtor has 28 days to respond to the Letter of Demand, so the matter is not counted as inactive until then">&#9203; Not counted as inactive until {{ m.lod_grace_until|date:"j M" }}</div>{% endif %}
+                    {% if m.status == 'active' and not m.staleness and m.lod_grace_until %}<div class="lt-sub" title="The debtor has 28 days to respond to the Letter of Demand, so the matter is not counted as inactive until then">Not counted as inactive until {{ m.lod_grace_until|date:"j M" }}</div>{% endif %}
                 </td>
                 <td data-k="Next action">
                     {% if m.board.actions %}
@@ -217,7 +217,7 @@ function filterMatters(q) {
                         {% csrf_token %}
                         <input type="hidden" name="matter_id" value="{{ m.id }}">
                         <input type="hidden" name="next" value="{% url 'xero_legal' %}?tab=pending">
-                        <button type="submit" class="btn btn-primary btn-sm">&#10003; Approve</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Approve</button>
                     </form>
                     <form method="post" action="{% url 'xero_legal_cancel' %}"
                           onsubmit="return confirm('Withdraw {{ m.contact_name|escapejs|default:m.contact_id }} from the lawyers?');">
@@ -236,7 +236,7 @@ function filterMatters(q) {
         </tbody>
     </table>
     {% else %}
-    <div class="lt-empty">{% if tab == 'action' %}&#10003; Nothing needs action right now.{% elif not matters %}No legal matters yet.{% if is_manager %} Send a company to the lawyers from the Handover page.{% endif %}{% else %}No matters in this category.{% endif %}</div>
+    <div class="lt-empty">{% if tab == 'action' %}Nothing needs action right now.{% elif not matters %}No legal matters yet.{% if is_manager %} Send a company to the lawyers from the Handover page.{% endif %}{% else %}No matters in this category.{% endif %}</div>
     {% endif %}
 </div>
 {% endblock %}
