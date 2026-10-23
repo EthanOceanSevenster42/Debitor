@@ -1102,6 +1102,73 @@ class LegalPayment(models.Model):
         ordering = ["-paid_on", "-recorded_at"]
 
 
+class Inspector(models.Model):
+    """An FSA inspector who can hand-deliver a Letter of Demand. Names come from
+    the "Inspector" tracking category on the Xero invoices ("020 - S Dlisani"
+    is stored as "S Dlisani"); the email address is kept here once someone has
+    entered it, so the next instruction to the same inspector fills it in."""
+    name = models.CharField(max_length=120, unique=True)
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    active = models.BooleanField(default=True)
+    updated_by = models.CharField(max_length=255, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class LodInstruction(models.Model):
+    """An instruction emailed to an inspector to deliver the Letter of Demand to
+    the facility by hand - what was sent, to whom, by when, and how it ended.
+
+    The email carries a private link (``token``) through which the inspector
+    uploads the signed acknowledgement of receipt; that completes the matter's
+    hand-delivery step. FSA can also record the outcome on the matter."""
+    SENT = "sent"
+    DELIVERED = "delivered"
+    UNSUCCESSFUL = "unsuccessful"
+    CANCELLED = "cancelled"
+    STATUS_CHOICES = [(SENT, "Awaiting delivery"), (DELIVERED, "Delivered"),
+                      (UNSUCCESSFUL, "Unsuccessful"), (CANCELLED, "Cancelled")]
+
+    matter = models.ForeignKey(LegalMatter, on_delete=models.CASCADE, related_name="lod_instructions")
+    inspector = models.ForeignKey(Inspector, on_delete=models.SET_NULL, null=True, blank=True,
+                                  related_name="instructions")
+    inspector_name = models.CharField(max_length=120)
+    to_email = models.EmailField()
+    cc = models.CharField(max_length=500, blank=True, default="")
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+    attachments = models.JSONField(default=list, blank=True)   # [{"name", "kind", "bytes"}]
+    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                blank=True, related_name="lod_instructions")
+    sent_by_name = models.CharField(max_length=255, blank=True, default="")
+    sent_at = models.DateTimeField(auto_now_add=True)
+    due_on = models.DateField()
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=SENT, db_index=True)
+    outcome_note = models.CharField(max_length=500, blank=True, default="")
+    closed_by = models.CharField(max_length=255, blank=True, default="")
+    closed_at = models.DateTimeField(null=True, blank=True)
+    # The inspector's upload link: the token, and the full address as it was
+    # sent, so a reminder repeats exactly the link in the first email.
+    token = models.CharField(max_length=64, unique=True)
+    upload_url = models.CharField(max_length=500, blank=True, default="")
+
+    class Meta:
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        return f"LOD hand delivery: {self.matter} -> {self.inspector_name} ({self.get_status_display()})"
+
+    @property
+    def is_open(self):
+        return self.status == self.SENT
+
+
 class LegalReminder(models.Model):
     """A diary reminder that has gone out, so each goes out once: keyed by what
     it was about (a promise date, an instalment, a follow-up, a day's list)."""

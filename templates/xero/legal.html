@@ -122,6 +122,7 @@ function filterMatters(q) {
         <h1 class="page-title">Lawyers &mdash; Legal Matters</h1>
         <div style="display:flex; gap:8px;">
             <a class="btn btn-primary btn-sm" href="{% url 'xero_legal_diary' %}">Diary</a>
+            {% if can_dispatch %}<a class="btn btn-secondary btn-sm" href="{% url 'xero_legal_deliveries' %}">Hand deliveries</a>{% endif %}
             {% if not user.is_lawyer %}<a class="btn btn-secondary btn-sm" href="{% url 'xero_handover' %}">&larr; Handover</a>{% endif %}
         </div>
     </div>

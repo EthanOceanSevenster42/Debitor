@@ -59,6 +59,23 @@
     .lod-proof .lp-note { flex: 1; min-width: 240px; }
     .lod-proof .lp-note input { padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 400; }
     .lod-proof .lp-file input { font-size: 12px; font-weight: 400; }
+    .lod-send { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+    .lod-ins { margin-top: 8px; }
+    .lod-ins-row { border: 1px solid #e2e8f0; border-radius: 10px; padding: 9px 12px; background: #fff; margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+    .lod-ins-row.open { border-color: #bfdbfe; background: #f8fbff; }
+    .lod-ins-main { flex: 1; min-width: 240px; font-size: 13px; }
+    .lod-ins-st { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .3px; padding: 1px 8px; border-radius: 8px; margin-left: 6px; background: #f1f5f9; color: #475569; }
+    .lod-ins-st.sent { background: #dbeafe; color: #1e40af; }
+    .lod-ins-st.late { background: #fee2e2; color: #b91c1c; }
+    .lod-ins-st.delivered { background: #dcfce7; color: #166534; }
+    .lod-ins-st.unsuccessful { background: #ffedd5; color: #9a3412; }
+    .lod-ins-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+    .lod-ins-acts form { margin: 0; }
+    .lod-ins-acts .btn { height: 30px; display: inline-flex; align-items: center; }
+    .lod-ins-fail { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .lod-ins-fail[hidden] { display: none; }
+    .lod-ins-fail select, .lod-ins-fail input { padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+    .lod-ins-fail input { flex: 1; min-width: 200px; }
     .ws-att { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
     .ws-att a { font-size: 12px; color: #1e40af; text-decoration: none; }
     .ws-att a:hover { text-decoration: underline; }
@@ -656,6 +673,12 @@ function toggleAdd(btn) {
                     {% else %}Becomes due 7 days after the Letter of Demand is sent by email or sheriff.{% endif %}
                     Arrange for an FSA inspector to deliver the Letter of Demand to the facility by hand and get a signed acknowledgement of receipt. This step stays open until the signed proof is uploaded.
                 </div>
+                {% if can_dispatch and not open_instruction %}
+                <div class="lod-send">
+                    <a class="btn btn-primary btn-sm" href="{% url 'xero_legal_lod_dispatch' matter.id %}">Send to an inspector</a>
+                    <span class="muted-sm">Emails the Letter of Demand, invoices and statement to the inspector, with a link to upload the signed proof.</span>
+                </div>
+                {% endif %}
                 {% if can_work %}
                 <form method="post" action="{% url 'xero_legal_step_comment' matter.id %}" class="lod-proof" enctype="multipart/form-data">
                     {% csrf_token %}
@@ -667,6 +690,33 @@ function toggleAdd(btn) {
                     <button type="submit" class="btn btn-primary btn-sm">Upload proof &amp; confirm delivered</button>
                 </form>
                 {% endif %}
+            </div>
+            {% endif %}
+
+            {% if st.key == 'lod_hand_delivery' and lod_instructions %}
+            <div class="ws-body lod-ins">
+                {% for i in lod_instructions %}
+                <div class="lod-ins-row{% if i.is_open %} open{% endif %}">
+                    <div class="lod-ins-main">
+                        <strong>{{ i.inspector_name }}</strong> <span class="muted-sm">{{ i.to_email }}</span>
+                        <span class="lod-ins-st {{ i.status }}{% if i.is_open and i.due_on < today %} late{% endif %}">{% if i.is_open and i.due_on < today %}Overdue{% else %}{{ i.get_status_display }}{% endif %}</span>
+                        <div class="muted-sm">Sent {{ i.sent_at|date:"j M Y, H:i" }} by {{ i.sent_by_name }} &middot; deliver by {{ i.due_on|date:"j M Y" }} &middot; {{ i.attachments|length }} attachment{{ i.attachments|length|pluralize }}{% if i.closed_at %} &middot; {{ i.get_status_display|lower }} {{ i.closed_at|date:"j M Y" }}{% if i.closed_by %} ({{ i.closed_by }}){% endif %}{% endif %}{% if i.outcome_note %} &middot; {{ i.outcome_note }}{% endif %}</div>
+                    </div>
+                    {% if i.is_open and can_dispatch %}
+                    <div class="lod-ins-acts">
+                        <form method="post" action="{% url 'xero_legal_lod_instruction' i.id %}">{% csrf_token %}<input type="hidden" name="action" value="remind"><button type="submit" class="btn btn-secondary btn-sm">Remind inspector</button></form>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="this.closest('.lod-ins-row').querySelector('.lod-ins-fail').hidden = false;">Could not deliver</button>
+                        <form method="post" action="{% url 'xero_legal_lod_instruction' i.id %}" onsubmit="return confirm('Cancel this instruction to {{ i.inspector_name|escapejs }}?');">{% csrf_token %}<input type="hidden" name="action" value="cancelled"><button type="submit" class="btn btn-secondary btn-sm">Cancel</button></form>
+                    </div>
+                    <form method="post" action="{% url 'xero_legal_lod_instruction' i.id %}" class="lod-ins-fail" hidden>
+                        {% csrf_token %}<input type="hidden" name="action" value="unsuccessful">
+                        <select name="reason" required>{% for v, l in delivery_reasons %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select>
+                        <input type="text" name="note" maxlength="500" placeholder="What happened, e.g. premises empty on 12 Nov">
+                        <button type="submit" class="btn btn-primary btn-sm">Record unsuccessful delivery</button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endfor %}
             </div>
             {% endif %}
 

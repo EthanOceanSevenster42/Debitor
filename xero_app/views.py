@@ -33,11 +33,13 @@ from .models import (XeroConnection, OpenInvoiceSnapshot, SyncRun, SyncSchedule,
                      EmailTemplate, MessageTemplate, SystemSetting, HandoverSetting,
                      LegalMatter, LegalStep, LegalStepComment, LegalStepCommentAttachment,
                      RecoveredInvoice, LawyerReportConfig, ReportRecipient, DebtorNotice,
-                     HandoverReturn, LegalClientInfo, LegalPaymentPlan, LegalPayment,
+                     HandoverReturn, LegalClientInfo, LegalPaymentPlan, LegalPayment, Inspector, LodInstruction,
                      DebtorComment, DebtorCategory, DebtorClassification,
                      DEFAULT_WA_TEMPLATE, DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY)
 from . import legal_workflow
 from . import legal_board
+from . import lod_dispatch
+from .statement_pdf import build_statement_pdf, statement_filename
 from .xero_client import (fetch_invoice_history, fetch_contact, clean_contact,
                           fetch_online_invoice_url, pacer, XeroDailyLimitError,
                           _refresh_access_token)
@@ -2558,6 +2560,7 @@ def _mark_lod_delivered(request, matter):
     st.done_by = request.user.get_full_name() or request.user.email
     st.done_at = timezone.now()
     st.save()
+    lod_dispatch.close_open_instructions(matter, LodInstruction.DELIVERED, st.done_by)
     if matter.delivery_failed:
         # Delivered after all: no longer an unsuccessful delivery.
         matter.delivery_failed = False
@@ -2709,7 +2712,7 @@ def xero_legal(request):
 
     matters = list(LegalMatter.objects.filter(tenant_id=tenant_id)
                    .select_related("attorney")
-                   .prefetch_related("step_states", "payment_plans", "payments"))
+                   .prefetch_related("step_states", "payment_plans", "payments", "lod_instructions"))
     is_manager = _can_manage_legal(request.user)
     # Lawyers see the matters they were given - active, and closed ones for the
     # record; managers see everything, including those awaiting approval.
@@ -2872,6 +2875,7 @@ def xero_legal(request):
         "division": division,
         "attorney": attorney,
         "attorneys": _attorney_choices(),
+        "can_dispatch": _can_dispatch(request.user),
         "today": timezone.localdate(),
         "is_manager": is_manager,
         "can_approve": _can_approve_legal(request.user),
@@ -2982,6 +2986,9 @@ def xero_legal_matter(request, matter_id, client_form=None):
         "division_choices": LegalMatter.DIVISION_CHOICES,
         "closure_reasons": [c for c in LegalMatter.CLOSURE_REASONS if c[0] not in ("returned", "withdrawn")],
         "can_decide_closure": _can_approve_legal(request.user),
+        "lod_instructions": list(matter.lod_instructions.all()),
+        "open_instruction": next((i for i in matter.lod_instructions.all() if i.is_open), None),
+        "can_dispatch": _can_dispatch(request.user) and matter.status == LegalMatter.ACTIVE,
         "can_assign": can_work or is_manager,
         "path": legal_board.path_for(matter, board),
         "past_plans": [p for p in matter.payment_plans.all() if p.status != LegalPaymentPlan.OPEN],
@@ -3355,7 +3362,7 @@ def xero_legal_diary(request):
     today = timezone.localdate()
     matters = list(LegalMatter.objects.filter(tenant_id=tenant_id, status=LegalMatter.ACTIVE)
                    .select_related("attorney")
-                   .prefetch_related("step_states", "payment_plans", "payments"))
+                   .prefetch_related("step_states", "payment_plans", "payments", "lod_instructions"))
     payments = legal_board.payments_by_contact(tenant_id, matters)
     owed = {}
     for m in matters:
@@ -5748,3 +5755,324 @@ def xero_dashboard(request):
     return render(request, "xero/dashboard.html", ctx)
 
 
+# ---- Letter of Demand hand delivery by an inspector -----------------------------------
+
+def _can_dispatch(user):
+    """Instruct an inspector and manage the address book: FSA's people on the
+    legal process (Super Admins, and anyone given Lawyers page access) - not
+    the attorneys."""
+    return not user.is_lawyer and (_can_work_legal(user) or _can_manage_legal(user))
+
+
+def _dispatch_matter(request, matter_id):
+    tenant_id = _current_tenant_id(request)
+    matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first() if tenant_id else None
+    if not matter or matter.status != LegalMatter.ACTIVE or not _can_dispatch(request.user):
+        return None, tenant_id
+    return matter, tenant_id
+
+
+@login_required
+def xero_legal_lod_dispatch(request, matter_id):
+    """Write and send the hand-delivery instruction to an inspector, with the
+    Letter of Demand, invoices and statement attached."""
+    matter, tenant_id = _dispatch_matter(request, matter_id)
+    if not matter:
+        messages.error(request, "You can't send a hand-delivery instruction for this matter.")
+        return redirect("xero_legal")
+    invoices = lod_dispatch.open_invoices(tenant_id, matter)
+    suggested = lod_dispatch.suggested_inspectors(invoices)
+    lod_dispatch.ensure_inspectors(suggested)
+    inspectors = list(Inspector.objects.filter(active=True))
+    documents = lod_dispatch.matter_documents(matter)
+    address, person, phone = lod_dispatch.debtor_address(tenant_id, matter)
+    sender = request.user.get_full_name() or request.user.email
+    today = timezone.localdate()
+    form_error = ""
+
+    if request.method == "POST":
+        p = request.POST
+        inspector = Inspector.objects.filter(id=p.get("inspector") or 0).first()
+        to_email = (p.get("to_email") or "").strip()
+        cc = [e.strip() for e in (p.get("cc") or "").replace(";", ",").split(",") if e.strip()]
+        if p.get("copy_me") and request.user.email and request.user.email not in cc:
+            cc.append(request.user.email)
+        due_on = _parse_date(p.get("due_on"))
+        subject = (p.get("subject") or "").strip()
+        body = (p.get("body") or "").strip()
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError
+        problems = []
+        if not inspector:
+            problems.append("choose the inspector")
+        try:
+            validate_email(to_email)
+        except ValidationError:
+            problems.append("enter the inspector's email address")
+        for e in cc:
+            try:
+                validate_email(e)
+            except ValidationError:
+                problems.append(f'"{e}" is not an email address')
+        if not due_on or due_on < today:
+            problems.append("choose a deliver-by date from today on")
+        if not subject or not body:
+            problems.append("the email needs a subject and a message")
+        if problems:
+            form_error = "Not sent: " + "; ".join(problems) + "."
+        else:
+            try:
+                files, summary = lod_dispatch.collect_attachments(
+                    tenant_id, matter, [int(x) for x in p.getlist("docs") if x.isdigit()],
+                    p.getlist("invoices"), bool(p.get("statement")), invoices=invoices)
+                if p.get("save_email") and inspector.email != to_email:
+                    inspector.email = to_email
+                    inspector.updated_by = sender
+                    inspector.save(update_fields=["email", "updated_by", "updated_at"])
+                instruction = lod_dispatch.send_instruction(
+                    user=request.user, matter=matter, inspector=inspector, to_email=to_email, cc=cc,
+                    subject=subject, body=body, due_on=due_on, files=files, summary=summary,
+                    upload_url_for=lambda token: request.build_absolute_uri(reverse("lod_proof_upload", args=[token])))
+            except lod_dispatch.DispatchError as exc:
+                form_error = str(exc)
+            else:
+                messages.success(request, f"Instruction sent to {instruction.inspector_name} ({instruction.to_email}) "
+                                          f"with {len(summary)} attachment{'s' if len(summary) != 1 else ''}. "
+                                          f"Deliver by {due_on:%d %b %Y}.")
+                return redirect(reverse("xero_legal_matter", args=[matter.id]) + "#step-lod_hand_delivery")
+        values = {
+            "inspector": int(p.get("inspector") or 0), "to_email": to_email, "cc": p.get("cc") or "",
+            "copy_me": bool(p.get("copy_me")), "save_email": bool(p.get("save_email")),
+            "due_on": p.get("due_on") or "", "subject": subject, "body": body,
+            "docs": {int(x) for x in p.getlist("docs") if x.isdigit()}, "invoices": set(p.getlist("invoices")),
+            "statement": bool(p.get("statement")),
+        }
+    else:
+        first = Inspector.objects.filter(name=suggested[0]).first() if suggested else None
+        due = today + timedelta(days=lod_dispatch.DUE_DAYS)
+        values = {
+            "inspector": first.id if first else 0, "to_email": first.email if first else "", "cc": "",
+            "copy_me": True, "save_email": True, "due_on": due.isoformat(),
+            "subject": lod_dispatch.default_subject(matter),
+            "body": lod_dispatch.default_body(matter, first.name if first else "Inspector", address,
+                                              person, phone, due, sender),
+            "docs": {d["id"] for d in documents if d["picked"]}, "invoices": {i.invoice_id for i in invoices},
+            "statement": True,
+        }
+    return render(request, "xero/legal_lod_dispatch.html", {
+        "matter": matter, "inspectors": inspectors, "suggested": suggested, "documents": documents,
+        "invoices": invoices, "invoices_total": sum((i.amount_due for i in invoices), Decimal(0)),
+        "address": address, "values": values, "form_error": form_error,
+        "previous": list(matter.lod_instructions.all()),
+        "max_mb": lod_dispatch.MAX_ATTACHMENT_BYTES // 1048576,
+    })
+
+
+@login_required
+def xero_legal_lod_statement(request, matter_id):
+    """The statement of account that goes with the instruction, to check first."""
+    tenant_id = _current_tenant_id(request)
+    matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first() if tenant_id else None
+    if not matter or not _can_view_matter(request.user, matter):
+        return HttpResponse(status=404)
+    lines, _person, _phone = lod_dispatch.debtor_address(tenant_id, matter)
+    name = matter.contact_name or matter.contact_id
+    pdf = build_statement_pdf(name, lines, lod_dispatch.open_invoices(tenant_id, matter))
+    resp = HttpResponse(pdf, content_type="application/pdf")
+    resp["Content-Disposition"] = f'inline; filename="{statement_filename(name)}"'
+    return resp
+
+
+@login_required
+def xero_legal_lod_invoice(request, matter_id, invoice_id):
+    """One of the debtor's invoices as Xero prints it."""
+    tenant_id = _current_tenant_id(request)
+    matter = LegalMatter.objects.filter(tenant_id=tenant_id, id=matter_id).first() if tenant_id else None
+    if not matter or not _can_view_matter(request.user, matter):
+        return HttpResponse(status=404)
+    inv = next((i for i in lod_dispatch.open_invoices(tenant_id, matter) if i.invoice_id == invoice_id), None)
+    conn = XeroConnection.objects.filter(tenant_id=tenant_id).first()
+    if not inv or not conn:
+        return HttpResponse(status=404)
+    from .xero_client import fetch_invoice_pdf
+    try:
+        pdf = fetch_invoice_pdf(conn, invoice_id)
+    except Exception as exc:  # noqa: BLE001
+        return HttpResponse(f"Xero did not return the invoice: {exc}", status=502, content_type="text/plain")
+    resp = HttpResponse(pdf, content_type="application/pdf")
+    resp["Content-Disposition"] = f'inline; filename="Invoice {inv.invoice_number or invoice_id}.pdf"'
+    return resp
+
+
+@login_required
+@require_POST
+def xero_legal_lod_instruction(request, instruction_id):
+    """Record how an instruction ended, or remind the inspector."""
+    tenant_id = _current_tenant_id(request)
+    ins = (LodInstruction.objects.filter(id=instruction_id, matter__tenant_id=tenant_id)
+           .select_related("matter", "sent_by").first() if tenant_id else None)
+    if not ins or not _can_dispatch(request.user):
+        messages.error(request, "You can't update this instruction.")
+        return redirect("xero_legal")
+    matter = ins.matter
+    back = request.POST.get("next") or reverse("xero_legal_matter", args=[matter.id]) + "#step-lod_hand_delivery"
+    who = request.user.get_full_name() or request.user.email
+    action = request.POST.get("action")
+    note = (request.POST.get("note") or "").strip()[:500]
+    if not ins.is_open:
+        messages.info(request, "That instruction is already closed.")
+    elif action == "remind":
+        try:
+            ok = lod_dispatch.remind_inspector(ins, overdue=ins.due_on < timezone.localdate())
+        except Exception:  # noqa: BLE001
+            ok = 0
+        if ok:
+            _status_log(matter, request.user, f"Reminded {ins.inspector_name} about the hand delivery.")
+            messages.success(request, f"Reminder sent to {ins.inspector_name}.")
+        else:
+            messages.error(request, "The reminder could not be sent.")
+    elif action in ("unsuccessful", "cancelled"):
+        ins.status = LodInstruction.UNSUCCESSFUL if action == "unsuccessful" else LodInstruction.CANCELLED
+        ins.closed_by, ins.closed_at, ins.outcome_note = who, timezone.now(), note
+        ins.save(update_fields=["status", "closed_by", "closed_at", "outcome_note"])
+        if action == "unsuccessful":
+            reason = request.POST.get("reason") or "other"
+            if reason not in dict(LegalMatter.DELIVERY_FAILED_REASONS):
+                reason = "other"
+            matter.delivery_failed, matter.delivery_failed_reason = True, reason
+            matter.delivery_failed_note = note or f"Reported for {ins.inspector_name}'s delivery"
+            matter.delivery_failed_by, matter.delivery_failed_at = who, timezone.now()
+            matter.save(update_fields=["delivery_failed", "delivery_failed_reason", "delivery_failed_note",
+                                       "delivery_failed_by", "delivery_failed_at", "updated_at"])
+            label = dict(LegalMatter.DELIVERY_FAILED_REASONS)[reason]
+            _status_log(matter, request.user, f"{ins.inspector_name} could not deliver the Letter of Demand: {label}.", note)
+            _log_notices_raised(request, notifications.notify_matter_update(
+                matter, request.user, f"recorded that the hand delivery by {ins.inspector_name} was unsuccessful ({label})",
+                detail=note))
+            messages.success(request, "Recorded as an unsuccessful delivery.")
+        else:
+            _status_log(matter, request.user, f"Cancelled the hand-delivery instruction to {ins.inspector_name}.", note)
+            messages.success(request, "Instruction cancelled.")
+    return redirect(back)
+
+
+@login_required
+def xero_legal_deliveries(request):
+    """Every hand-delivery instruction: what is outstanding, overdue, done."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    if not (_can_dispatch(request.user) or _can_manage_legal(request.user)):
+        return redirect("xero_legal")
+    status = request.GET.get("status") or "open"
+    qs = (LodInstruction.objects.filter(matter__tenant_id=tenant_id)
+          .select_related("matter", "inspector").order_by("due_on", "-sent_at"))
+    today = timezone.localdate()
+    counts = {
+        "open": qs.filter(status=LodInstruction.SENT).count(),
+        "overdue": qs.filter(status=LodInstruction.SENT, due_on__lt=today).count(),
+        "delivered": qs.filter(status=LodInstruction.DELIVERED).count(),
+        "unsuccessful": qs.filter(status=LodInstruction.UNSUCCESSFUL).count(),
+        "all": qs.count(),
+    }
+    if status == "overdue":
+        qs = qs.filter(status=LodInstruction.SENT, due_on__lt=today)
+    elif status in ("open", "delivered", "unsuccessful"):
+        qs = qs.filter(status={"open": LodInstruction.SENT, "delivered": LodInstruction.DELIVERED,
+                               "unsuccessful": LodInstruction.UNSUCCESSFUL}[status])
+    else:
+        status = "all"
+    rows = list(qs[:500])
+    for r in rows:
+        r.days_left = (r.due_on - today).days
+        r.days_overdue = max(0, -r.days_left)
+        r.days_out = ((r.closed_at.date() if r.closed_at else today) - timezone.localtime(r.sent_at).date()).days
+    # Matters where the LOD is due for hand delivery but no inspector has been asked yet.
+    waiting = []
+    for m in (LegalMatter.objects.filter(tenant_id=tenant_id, status=LegalMatter.ACTIVE, delivery_failed=False)
+              .prefetch_related("step_states", "lod_instructions")):
+        state = legal_workflow.lod_delivery_state(m, timezone.now())
+        if state["due_at"] and not state["done"] and not any(i.is_open for i in m.lod_instructions.all()):
+            m.due_at = state["due_at"]
+            waiting.append(m)
+    waiting.sort(key=lambda m: m.due_at)
+    return render(request, "xero/legal_deliveries.html", {
+        "rows": rows, "status": status, "counts": counts, "today": today, "waiting": waiting,
+    })
+
+
+@login_required
+def xero_inspectors(request):
+    """The inspector address book: names come from Xero; emails are kept here."""
+    tenant_id = _current_tenant_id(request)
+    if not tenant_id:
+        return redirect("xero_login")
+    if not _can_dispatch(request.user):
+        return redirect("xero_legal")
+    if request.method == "POST":
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError
+        who = request.user.get_full_name() or request.user.email
+        saved, bad = 0, []
+        for ins in Inspector.objects.all():
+            key = f"email_{ins.id}"
+            if key not in request.POST:
+                continue
+            email = (request.POST.get(key) or "").strip()
+            phone = (request.POST.get(f"phone_{ins.id}") or "").strip()[:40]
+            active = bool(request.POST.get(f"active_{ins.id}"))
+            if email:
+                try:
+                    validate_email(email)
+                except ValidationError:
+                    bad.append(ins.name)
+                    continue
+            if (email, phone, active) != (ins.email, ins.phone, ins.active):
+                ins.email, ins.phone, ins.active, ins.updated_by = email, phone, active, who
+                ins.save()
+                saved += 1
+        if bad:
+            messages.error(request, "Not a valid email address for: " + ", ".join(bad) + ".")
+        messages.success(request, f"{saved} inspector{'s' if saved != 1 else ''} updated.")
+        return redirect("xero_inspectors")
+    lod_dispatch.sync_inspectors_from_xero(tenant_id)
+    usage = defaultdict(int)
+    for raw in (OpenInvoiceSnapshot.objects.filter(tenant_id=tenant_id).exclude(inspector="")
+                .values_list("inspector", flat=True)):
+        for n in lod_dispatch.inspector_names(raw):
+            usage[n] += 1
+    inspectors = list(Inspector.objects.all())
+    for i in inspectors:
+        i.invoice_count = usage.get(i.name, 0)
+    inspectors.sort(key=lambda i: (not i.active, bool(i.email), -i.invoice_count, i.name))
+    return render(request, "xero/inspectors.html", {
+        "inspectors": inspectors, "missing": sum(1 for i in inspectors if i.active and not i.email),
+    })
+
+
+def lod_proof_upload(request, token):
+    """The inspector's page, opened from the instruction email without logging
+    in: upload the signed acknowledgement of receipt. The token is the key, and
+    the page shows only which facility and by when."""
+    ins = LodInstruction.objects.filter(token=token).select_related("matter").first()
+    if not ins:
+        return render(request, "xero/lod_proof_upload.html", {"state": "unknown"}, status=404)
+    if ins.status == LodInstruction.DELIVERED:
+        return render(request, "xero/lod_proof_upload.html", {"state": "done", "ins": ins})
+    if not lod_dispatch.link_is_usable(ins):
+        return render(request, "xero/lod_proof_upload.html", {"state": "closed", "ins": ins})
+    error = ""
+    if request.method == "POST":
+        f = request.FILES.get("proof")
+        note = (request.POST.get("note") or "").strip()[:500]
+        allowed = (".pdf", ".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".doc", ".docx")
+        if not f:
+            error = "Choose the photo or scan of the signed acknowledgement."
+        elif not f.name.lower().endswith(allowed):
+            error = "Upload a photo (JPG or PNG) or a PDF."
+        elif f.size > 20 * 1024 * 1024:
+            error = "That file is over 20 MB. Please take a smaller photo or scan."
+        else:
+            lod_dispatch.complete_from_inspector(ins, f, note)
+            return render(request, "xero/lod_proof_upload.html", {"state": "thanks", "ins": ins})
+    return render(request, "xero/lod_proof_upload.html", {"state": "open", "ins": ins, "error": error})

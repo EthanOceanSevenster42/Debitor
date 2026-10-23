@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Inspectors - FSA Debtor System{% endblock %}
+{% block extra_head %}
+<style>
+    .in-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .in-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; padding: 8px 10px; border-bottom: 2px solid #e2e8f0; }
+    .in-table td { padding: 7px 10px; border-bottom: 1px solid #eef2f7; vertical-align: middle; }
+    .in-table input[type=email], .in-table input[type=text] { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+    .in-table input[type=email]:placeholder-shown { border-color: #fdba74; background: #fffbf5; }
+    .in-table tr.off td { color: #94a3b8; }
+    .in-name { font-weight: 700; color: var(--navy); }
+    .in-sub { display: block; font-size: 11.5px; color: #64748b; font-weight: 400; }
+    .in-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .in-search { padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; min-width: 240px; }
+    .in-save { position: sticky; bottom: 0; background: #fff; padding: 12px 0 2px; display: flex; justify-content: flex-end; border-top: 1px solid #e2e8f0; margin-top: 10px; }
+    @media (max-width: 760px) {
+        .in-table thead { display: none; }
+        .in-table, .in-table tbody, .in-table tr, .in-table td { display: block; width: 100%; box-sizing: border-box; }
+        .in-table tr { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 8px; }
+        .in-table td { border: 0; padding: 4px 12px; }
+        .in-search { min-width: 0; width: 100%; }
+    }
+</style>
+{% endblock %}
+{% block extra_body %}
+<script>
+function filterInspectors(q) {
+    q = (q || '').trim().toLowerCase();
+    document.querySelectorAll('#in-rows tr').forEach(function (tr) {
+        tr.hidden = q && tr.dataset.search.indexOf(q) === -1;
+    });
+}
+</script>
+{% endblock %}
+{% block content %}
+<div class="page-card">
+    <div class="flex-between">
+        <h1 class="page-title">Inspectors</h1>
+        <a class="btn btn-secondary btn-sm" href="{% url 'xero_legal_deliveries' %}">&larr; Hand deliveries</a>
+    </div>
+    <p class="page-subtitle">The inspectors named on the Xero invoices, with the email address each Letter of Demand instruction goes to. Addresses typed when sending an instruction are saved here too.</p>
+
+    <div class="in-bar">
+        <span>{% if missing %}<strong>{{ missing }}</strong> active inspector{{ missing|pluralize }} without an email address{% else %}Every active inspector has an email address.{% endif %}</span>
+        <input type="search" class="in-search" placeholder="Search inspectors&hellip;" oninput="filterInspectors(this.value)" aria-label="Search inspectors">
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <table class="in-table">
+            <thead><tr><th>Inspector</th><th>Email</th><th>Phone</th><th>Active</th></tr></thead>
+            <tbody id="in-rows">
+            {% for i in inspectors %}
+            <tr class="{% if not i.active %}off{% endif %}" data-search="{{ i.name|lower }} {{ i.email|lower }}">
+                <td><span class="in-name">{{ i.name }}</span><span class="in-sub">{% if i.invoice_count %}On {{ i.invoice_count }} open invoice{{ i.invoice_count|pluralize }}{% else %}No open invoices{% endif %}</span></td>
+                <td><input type="email" name="email_{{ i.id }}" value="{{ i.email }}" placeholder="No address yet" aria-label="Email for {{ i.name }}"></td>
+                <td><input type="text" name="phone_{{ i.id }}" value="{{ i.phone }}" maxlength="40" aria-label="Phone for {{ i.name }}"></td>
+                <td><input type="checkbox" name="active_{{ i.id }}" value="1"{% if i.active %} checked{% endif %} aria-label="{{ i.name }} is active"></td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" style="text-align:center; color:#64748b; padding:20px;">No inspectors on the invoices yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <div class="in-save"><button type="submit" class="btn btn-primary">Save changes</button></div>
+    </form>
+</div>
+{% endblock %}

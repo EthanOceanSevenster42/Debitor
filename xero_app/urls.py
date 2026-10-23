@@ -49,6 +49,13 @@ urlpatterns = [
     path("legal/<int:matter_id>/closure/", views.xero_legal_closure_decide, name="xero_legal_closure_decide"),
     path("legal/<int:matter_id>/assign/", views.xero_legal_assign, name="xero_legal_assign"),
     path("legal/diary/", views.xero_legal_diary, name="xero_legal_diary"),
+    path("legal/<int:matter_id>/hand-delivery/", views.xero_legal_lod_dispatch, name="xero_legal_lod_dispatch"),
+    path("legal/<int:matter_id>/statement.pdf", views.xero_legal_lod_statement, name="xero_legal_lod_statement"),
+    path("legal/<int:matter_id>/invoice/<str:invoice_id>.pdf", views.xero_legal_lod_invoice, name="xero_legal_lod_invoice"),
+    path("legal/instruction/<int:instruction_id>/", views.xero_legal_lod_instruction, name="xero_legal_lod_instruction"),
+    path("legal/hand-deliveries/", views.xero_legal_deliveries, name="xero_legal_deliveries"),
+    path("inspectors/", views.xero_inspectors, name="xero_inspectors"),
+    path("delivery/<str:token>/", views.lod_proof_upload, name="lod_proof_upload"),
     # Filing / archive (Super Admin)
     path("filing/", views.xero_filing, name="xero_filing"),
     path("filing/company/", views.xero_filing_company, name="xero_filing_company"),

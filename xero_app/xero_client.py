@@ -112,8 +112,9 @@ def _headers(connection):
     }
 
 
-def _get(connection, path, extra_headers=None, max_429_retries=20):
-    """GET with 401 (one refresh) + 429 (Retry-After) handling. Returns parsed JSON or raises."""
+def _get(connection, path, extra_headers=None, max_429_retries=20, raw=False):
+    """GET with 401 (one refresh) + 429 (Retry-After) handling. Returns parsed JSON
+    (or the raw bytes, with ``raw``) or raises."""
     url = f"{XERO_API_BASE}/{path}"
     refreshed_once = False
     for attempt in range(max_429_retries + 1):
@@ -142,7 +143,7 @@ def _get(connection, path, extra_headers=None, max_429_retries=20):
             time.sleep(min(wait + 1, 65))
             continue
         r.raise_for_status()
-        return r.json()
+        return r.content if raw else r.json()
     raise RuntimeError(f"Xero rate limit retries exhausted for {path}")
 
 
@@ -267,6 +268,11 @@ def fetch_online_invoice_url(connection, invoice_id):
     data = _get(connection, f"Invoices/{invoice_id}/OnlineInvoice")
     items = data.get("OnlineInvoices") or []
     return (items[0].get("OnlineInvoiceUrl") or "") if items else ""
+
+
+def fetch_invoice_pdf(connection, invoice_id):
+    """The invoice as Xero prints it, as PDF bytes (1 API call)."""
+    return _get(connection, f"Invoices/{invoice_id}", extra_headers={"Accept": "application/pdf"}, raw=True)
 
 
 def fetch_invoice_history(connection, invoice_id):

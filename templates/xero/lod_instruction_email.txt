@@ -1,0 +1,10 @@
+{% autoescape off %}{% for para in paragraphs %}{{ para }}
+
+{% endfor %}{% if upload_url %}Once the documents have been delivered, please upload the signed acknowledgement of receipt here (a photo from your phone is fine):
+{{ upload_url }}
+
+{% endif %}{% if attachments %}Attached:
+{% for a in attachments %}  - {{ a }}
+{% endfor %}
+{% endif %}Sent from the FSA Debtor System. Replies to this email go to the person who sent it.
+{% endautoescape %}

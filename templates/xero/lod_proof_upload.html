@@ -1,0 +1,48 @@
+{% extends "_status_page.html" %}
+{% block title %}Proof of delivery - Food Safety Agency{% endblock %}
+{% block head %}
+<style>
+    .up-form { text-align: left; margin-top: 16px; }
+    .up-form label { display: block; font-size: 13px; font-weight: 700; color: #334155; margin: 12px 0 6px; }
+    .up-form input[type=file] { width: 100%; padding: 12px; border: 2px dashed #99d5d2; border-radius: 10px; background: #f5fbfb; box-sizing: border-box; font-size: 14px; }
+    .up-form textarea { width: 100%; box-sizing: border-box; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; font-size: 14px; }
+    .up-form .auth-button { width: 100%; margin-top: 16px; }
+    .up-facts { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; text-align: left; font-size: 14px; color: #1f2937; margin: 12px 0 4px; }
+    .up-facts div + div { margin-top: 4px; }
+    .up-facts span { color: #64748b; font-size: 12.5px; display: inline-block; min-width: 92px; }
+    .up-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 8px 12px; font-size: 13.5px; margin-top: 10px; text-align: left; }
+</style>
+{% endblock %}
+{% block card %}
+{% if state == 'open' %}
+<h1>Proof of delivery</h1>
+<p>Thank you for delivering the Letter of Demand. Please upload the signed acknowledgement of receipt below.</p>
+<div class="up-facts">
+    <div><span>Facility</span> <strong>{{ ins.matter.contact_name|default:ins.matter.contact_id }}</strong></div>
+    <div><span>Inspector</span> {{ ins.inspector_name }}</div>
+    <div><span>Deliver by</span> {{ ins.due_on|date:"j F Y" }}</div>
+</div>
+{% if error %}<div class="up-error">{{ error }}</div>{% endif %}
+<form method="post" enctype="multipart/form-data" class="up-form">
+    {% csrf_token %}
+    <label for="proof">Photo or scan of the signed acknowledgement</label>
+    <input type="file" name="proof" id="proof" accept="image/*,.pdf" required>
+    <label for="note">Note (optional)</label>
+    <textarea name="note" id="note" rows="3" maxlength="500" placeholder="e.g. Signed by the manager, Mr Smith, at 10:30"></textarea>
+    <button type="submit" class="auth-button">Upload proof of delivery</button>
+</form>
+{% elif state == 'thanks' %}
+<h1>Thank you &mdash; received</h1>
+<p>The signed acknowledgement for <strong>{{ ins.matter.contact_name|default:ins.matter.contact_id }}</strong> has been uploaded, and the Food Safety Agency has been notified. You can close this page.</p>
+{% elif state == 'done' %}
+<h1>Already received</h1>
+<p>The proof of delivery for <strong>{{ ins.matter.contact_name|default:ins.matter.contact_id }}</strong> has already been uploaded. Thank you &mdash; nothing more is needed.</p>
+{% elif state == 'closed' %}
+<h1>This link is no longer open</h1>
+<p>This delivery instruction has been closed. If you still have a signed acknowledgement to send, please reply to the instruction email.</p>
+{% else %}
+<div class="status-code">404</div>
+<h1>Link not recognised</h1>
+<p>Please use the link exactly as it appears in the instruction email, or reply to that email for help.</p>
+{% endif %}
+{% endblock %}

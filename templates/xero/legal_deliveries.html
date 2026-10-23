@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Hand deliveries - FSA Debtor System{% endblock %}
+{% block extra_head %}
+<style>
+    .hd-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
+    .hd-tab { padding: 7px 13px; border: 1px solid #e2e8f0; border-radius: 9px; text-decoration: none; color: #334155; font-weight: 700; font-size: 13px; background: #fff; }
+    .hd-tab .n { margin-left: 6px; color: #64748b; }
+    .hd-tab.on { background: var(--brand-teal, #0E7C7B); border-color: var(--brand-teal, #0E7C7B); color: #fff; }
+    .hd-tab.on .n { color: #d6f1f0; }
+    .hd-tab.late { border-color: #fecaca; color: #b91c1c; background: #fef2f2; }
+    .hd-tab.late.on { background: #b91c1c; color: #fff; }
+    .hd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .hd-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; padding: 8px 10px; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+    .hd-table td { padding: 9px 10px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+    .hd-table a.nm { font-weight: 700; color: var(--navy); text-decoration: none; }
+    .hd-sub { display: block; font-size: 11.5px; color: #64748b; }
+    .hd-st { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; white-space: nowrap; }
+    .hd-st.sent { background: #eff6ff; color: #1d4ed8; }
+    .hd-st.late { background: #fee2e2; color: #b91c1c; }
+    .hd-st.delivered { background: #dcfce7; color: #166534; }
+    .hd-st.unsuccessful { background: #ffedd5; color: #9a3412; }
+    .hd-st.cancelled { background: #f1f5f9; color: #475569; }
+    .hd-act { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .hd-act form { margin: 0; }
+    .hd-act .btn { height: 30px; display: inline-flex; align-items: center; }
+    .hd-waiting { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+    .hd-waiting ul { margin: 6px 0 0; padding-left: 18px; }
+    .hd-empty { padding: 22px; text-align: center; color: #64748b; }
+    @media (max-width: 860px) {
+        .hd-table thead { display: none; }
+        .hd-table, .hd-table tbody, .hd-table tr, .hd-table td { display: block; width: 100%; box-sizing: border-box; }
+        .hd-table tr { border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 10px; }
+        .hd-table td { border: 0; padding: 5px 12px; }
+        .hd-act { justify-content: flex-start; }
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-card">
+    <div class="flex-between">
+        <h1 class="page-title">Hand deliveries</h1>
+        <div style="display:flex; gap:8px;">
+            <a class="btn btn-secondary btn-sm" href="{% url 'xero_inspectors' %}">Inspectors</a>
+            <a class="btn btn-secondary btn-sm" href="{% url 'xero_legal' %}">&larr; Lawyers</a>
+        </div>
+    </div>
+    <p class="page-subtitle">Letters of Demand sent to inspectors to deliver by hand, and whether the signed proof has come back.</p>
+
+    {% if waiting %}
+    <div class="hd-waiting">
+        <strong>{{ waiting|length }} Letter{{ waiting|length|pluralize }} of Demand ready for hand delivery, not yet sent to an inspector:</strong>
+        <ul>{% for m in waiting %}<li><a href="{% url 'xero_legal_lod_dispatch' m.id %}">{{ m.contact_name|default:m.contact_id }}</a> &mdash; due {{ m.due_at|date:"j M Y" }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <nav class="hd-tabs">
+        <a class="hd-tab{% if status == 'open' %} on{% endif %}" href="?status=open">Awaiting delivery<span class="n">{{ counts.open }}</span></a>
+        <a class="hd-tab late{% if status == 'overdue' %} on{% endif %}" href="?status=overdue">Overdue<span class="n">{{ counts.overdue }}</span></a>
+        <a class="hd-tab{% if status == 'delivered' %} on{% endif %}" href="?status=delivered">Delivered<span class="n">{{ counts.delivered }}</span></a>
+        <a class="hd-tab{% if status == 'unsuccessful' %} on{% endif %}" href="?status=unsuccessful">Unsuccessful<span class="n">{{ counts.unsuccessful }}</span></a>
+        <a class="hd-tab{% if status == 'all' %} on{% endif %}" href="?status=all">All<span class="n">{{ counts.all }}</span></a>
+    </nav>
+
+    {% if rows %}
+    <table class="hd-table">
+        <thead><tr><th>Facility</th><th>Inspector</th><th>Sent</th><th>Deliver by</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+            <td><a class="nm" href="{% url 'xero_legal_matter' r.matter.id %}#step-lod_hand_delivery">{{ r.matter.contact_name|default:r.matter.contact_id }}</a>
+                <span class="hd-sub">{{ r.attachments|length }} attachment{{ r.attachments|length|pluralize }}</span></td>
+            <td>{{ r.inspector_name }}<span class="hd-sub">{{ r.to_email }}</span></td>
+            <td>{{ r.sent_at|date:"j M Y" }}<span class="hd-sub">by {{ r.sent_by_name }}</span></td>
+            <td>{{ r.due_on|date:"j M Y" }}{% if r.is_open %}<span class="hd-sub">{% if r.days_left < 0 %}{{ r.days_overdue }} day{{ r.days_overdue|pluralize }} overdue{% elif r.days_left == 0 %}today{% else %}in {{ r.days_left }} day{{ r.days_left|pluralize }}{% endif %}</span>{% endif %}</td>
+            <td>
+                {% if r.is_open and r.days_left < 0 %}<span class="hd-st late">Overdue</span>
+                {% else %}<span class="hd-st {{ r.status }}">{{ r.get_status_display }}</span>{% endif %}
+                {% if r.closed_at %}<span class="hd-sub">{{ r.closed_at|date:"j M Y" }}{% if r.closed_by %} &middot; {{ r.closed_by }}{% endif %}</span>{% endif %}
+                {% if r.outcome_note %}<span class="hd-sub">{{ r.outcome_note }}</span>{% endif %}
+            </td>
+            <td>
+                {% if r.is_open %}
+                <div class="hd-act">
+                    <form method="post" action="{% url 'xero_legal_lod_instruction' r.id %}">{% csrf_token %}<input type="hidden" name="action" value="remind"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-secondary btn-sm" type="submit">Remind inspector</button></form>
+                    <a class="btn btn-primary btn-sm" href="{% url 'xero_legal_matter' r.matter.id %}#step-lod_hand_delivery">Open</a>
+                </div>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="hd-empty">{% if status == 'open' %}No deliveries waiting on an inspector.{% elif status == 'overdue' %}Nothing overdue.{% else %}Nothing here yet.{% endif %}</div>
+    {% endif %}
+</div>
+{% endblock %}

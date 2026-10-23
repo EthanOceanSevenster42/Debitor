@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Send to an inspector - {{ matter.contact_name|default:matter.contact_id }}{% endblock %}
+{% block extra_head %}
+<style>
+    .ld-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .ld-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+    .ld-card h2 { font-size: 15px; color: var(--navy); margin: 0 0 10px; }
+    .ld-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .ld-fields .wide { grid-column: 1 / -1; }
+    .ld-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: #475569; }
+    .ld-fields input[type=text], .ld-fields input[type=email], .ld-fields input[type=date], .ld-fields select, .ld-fields textarea {
+        padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 7px; font-size: 13.5px; font-weight: 400; font-family: inherit; }
+    .ld-fields textarea { resize: vertical; line-height: 1.5; }
+    .ld-fields em { font-style: normal; font-weight: 400; font-size: 11.5px; color: #64748b; }
+    .ld-check { flex-direction: row !important; align-items: center; gap: 8px !important; font-weight: 600 !important; color: #334155 !important; }
+    .ld-files { list-style: none; margin: 0; padding: 0; }
+    .ld-files li { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .ld-files li:last-child { border-bottom: 0; }
+    .ld-files input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--brand-teal, #0E7C7B); }
+    .ld-files .nm { font-weight: 600; color: #1f2937; word-break: break-word; }
+    .ld-files .meta { display: block; font-size: 11.5px; color: #64748b; font-weight: 400; }
+    .ld-files a { margin-left: auto; font-size: 12px; white-space: nowrap; color: #1e40af; }
+    .ld-sub { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: #64748b; font-weight: 700; margin: 12px 0 4px; }
+    .ld-sub:first-of-type { margin-top: 0; }
+    .ld-empty { font-size: 12.5px; color: #94a3b8; padding: 4px 0; }
+    .ld-size { font-size: 12px; color: #475569; margin-top: 8px; }
+    .ld-size.over { color: #b91c1c; font-weight: 700; }
+    .ld-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+    .ld-prev li { font-size: 12.5px; color: #334155; padding: 4px 0; }
+    .ld-hint { font-size: 12.5px; color: #475569; margin: 0 0 10px; }
+    @media (max-width: 900px) { .ld-grid { grid-template-columns: 1fr; } .ld-fields { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block extra_body %}
+<script>
+// Picking another inspector fills in their saved address and the greeting.
+function pickInspector(sel) {
+    var opt = sel.options[sel.selectedIndex];
+    var email = document.getElementById('ld-email');
+    email.value = opt.dataset.email || '';
+    document.getElementById('ld-noemail').hidden = !!opt.dataset.email;
+    var body = document.getElementById('ld-body');
+    body.value = body.value.replace(/^Dear [^\n,]*,/, 'Dear ' + opt.dataset.name + ',');
+}
+// The size of the chosen documents, so a too-large email shows before sending.
+function updateSize() {
+    var bytes = 0;
+    document.querySelectorAll('input[name=docs]:checked').forEach(function (c) { bytes += +c.dataset.size; });
+    var inv = document.querySelectorAll('input[name=invoices]:checked').length;
+    bytes += inv * 40000 + (document.querySelector('input[name=statement]').checked ? 30000 : 0);
+    var el = document.getElementById('ld-size');
+    var mb = bytes / 1048576, max = {{ max_mb }};
+    el.textContent = 'About ' + mb.toFixed(1) + ' MB of attachments (email allows about ' + max + ' MB).';
+    el.className = 'ld-size' + (mb > max ? ' over' : '');
+}
+document.addEventListener('DOMContentLoaded', updateSize);
+</script>
+{% endblock %}
+{% block content %}
+<div class="page-card">
+    <div class="flex-between">
+        <h1 class="page-title">Send to an inspector</h1>
+        <a class="btn btn-secondary btn-sm" href="{% url 'xero_legal_matter' matter.id %}#step-lod_hand_delivery">&larr; Back to the matter</a>
+    </div>
+    <p class="page-subtitle">Email the Letter of Demand for <strong>{{ matter.contact_name|default:matter.contact_id }}</strong> to an inspector to deliver by hand. The email includes a link for the inspector to upload the signed acknowledgement of receipt, which completes the step on the matter.</p>
+
+    {% if form_error %}<div class="alert alert-error">{{ form_error }}</div>{% endif %}
+
+    <form method="post" class="ld-grid" onchange="updateSize()">
+        {% csrf_token %}
+        <div>
+            <div class="ld-card">
+                <h2>Inspector</h2>
+                <div class="ld-fields">
+                    <label>Inspector
+                        <select name="inspector" onchange="pickInspector(this)" required>
+                            {% if not values.inspector %}<option value="">Choose&hellip;</option>{% endif %}
+                            {% if suggested %}<optgroup label="On this debtor's invoices">
+                            {% for i in inspectors %}{% if i.name in suggested %}<option value="{{ i.id }}" data-email="{{ i.email }}" data-name="{{ i.name }}"{% if i.id == values.inspector %} selected{% endif %}>{{ i.name }}{% if not i.email %} (no email saved){% endif %}</option>{% endif %}{% endfor %}
+                            </optgroup>{% endif %}
+                            <optgroup label="All inspectors">
+                            {% for i in inspectors %}{% if i.name not in suggested %}<option value="{{ i.id }}" data-email="{{ i.email }}" data-name="{{ i.name }}"{% if i.id == values.inspector %} selected{% endif %}>{{ i.name }}{% if not i.email %} (no email saved){% endif %}</option>{% endif %}{% endfor %}
+                            </optgroup>
+                        </select>
+                    </label>
+                    <label>Inspector's email
+                        <input type="email" name="to_email" id="ld-email" value="{{ values.to_email }}" required placeholder="name@afsq.co.za">
+                        <em id="ld-noemail"{% if values.to_email %} hidden{% endif %}>No address saved yet for this inspector &mdash; type it once and it is kept.</em>
+                    </label>
+                    <label class="ld-check wide"><input type="checkbox" name="save_email" value="1"{% if values.save_email %} checked{% endif %}> Save this address for this inspector</label>
+                    <label>Copy to (optional)
+                        <input type="text" name="cc" value="{{ values.cc }}" placeholder="other@afsq.co.za">
+                        <em>Separate several addresses with commas.</em>
+                    </label>
+                    <label>Deliver by
+                        <input type="date" name="due_on" value="{{ values.due_on }}" required>
+                        <em>A reminder goes to the inspector 2 days before, and FSA is alerted if it passes.</em>
+                    </label>
+                    <label class="ld-check wide"><input type="checkbox" name="copy_me" value="1"{% if values.copy_me %} checked{% endif %}> Send me a copy ({{ user.email }})</label>
+                </div>
+            </div>
+            <div class="ld-card">
+                <h2>Email</h2>
+                <div class="ld-fields">
+                    <label class="wide">Subject<input type="text" name="subject" value="{{ values.subject }}" maxlength="255" required></label>
+                    <label class="wide">Message
+                        <textarea name="body" id="ld-body" rows="18" required>{{ values.body }}</textarea>
+                        <em>The upload link and the list of attachments are added below your message. Replies come to you.</em>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <div class="ld-card">
+                <h2>Attachments</h2>
+                <div class="ld-sub">From the attorneys</div>
+                {% if documents %}
+                <ul class="ld-files">
+                    {% for d in documents %}
+                    <li><input type="checkbox" name="docs" value="{{ d.id }}" id="doc-{{ d.id }}" data-size="{{ d.size }}"{% if d.id in values.docs %} checked{% endif %}>
+                        <label for="doc-{{ d.id }}"><span class="nm">{{ d.name }}</span><span class="meta">{{ d.step }} &middot; {{ d.size|filesizeformat }}</span></label>
+                        <a href="{{ d.url }}" target="_blank" rel="noopener">View</a></li>
+                    {% endfor %}
+                </ul>
+                <p class="ld-hint" style="margin:6px 0 0;">The Letter of Demand and cover letter are ticked for you; proofs of service and saved emails are left out.</p>
+                {% else %}<div class="ld-empty">No documents on the matter yet. The attorneys upload the Letter of Demand on the Draft LOD step.</div>{% endif %}
+
+                <div class="ld-sub">Invoices (from Xero)</div>
+                {% if invoices %}
+                <ul class="ld-files">
+                    {% for inv in invoices %}
+                    <li><input type="checkbox" name="invoices" value="{{ inv.invoice_id }}" id="inv-{{ forloop.counter }}"{% if inv.invoice_id in values.invoices %} checked{% endif %}>
+                        <label for="inv-{{ forloop.counter }}"><span class="nm">{{ inv.invoice_number|default:"Invoice" }}</span><span class="meta">Due {{ inv.due_date|date:"j M Y" }} &middot; R&nbsp;{{ inv.amount_due|floatformat:2|intcomma }} owing</span></label>
+                        <a href="{% url 'xero_legal_lod_invoice' matter.id inv.invoice_id %}" target="_blank" rel="noopener">View</a></li>
+                    {% endfor %}
+                </ul>
+                {% else %}<div class="ld-empty">No open invoices in Xero for this debtor.</div>{% endif %}
+
+                <div class="ld-sub">Statement of account</div>
+                <ul class="ld-files">
+                    <li><input type="checkbox" name="statement" value="1" id="ld-statement"{% if values.statement %} checked{% endif %}>
+                        <label for="ld-statement"><span class="nm">Statement of account</span><span class="meta">{{ invoices|length }} open invoice{{ invoices|length|pluralize }}, R&nbsp;{{ invoices_total|floatformat:2|intcomma }} in total</span></label>
+                        <a href="{% url 'xero_legal_lod_statement' matter.id %}" target="_blank" rel="noopener">View</a></li>
+                </ul>
+                <div class="ld-size" id="ld-size"></div>
+            </div>
+
+            <div class="ld-card">
+                <h2>Delivery address</h2>
+                {% if address %}<p style="margin:0; font-size:13.5px;">{% for line in address %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</p>
+                {% else %}<p class="ld-empty" style="margin:0;">No address on record. Add the domicilium under Client details on the matter, or write it into the message.</p>{% endif %}
+            </div>
+
+            {% if previous %}
+            <div class="ld-card">
+                <h2>Earlier instructions on this matter</h2>
+                <ul class="ld-prev" style="margin:0; padding-left:18px;">
+                    {% for p in previous %}<li>{{ p.sent_at|date:"j M Y" }} to {{ p.inspector_name }} &mdash; <strong>{{ p.get_status_display }}</strong></li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="ld-actions">
+                <a class="btn btn-secondary" href="{% url 'xero_legal_matter' matter.id %}#step-lod_hand_delivery">Cancel</a>
+                <button type="submit" class="btn btn-primary">Send to inspector</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

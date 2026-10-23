@@ -388,11 +388,19 @@ def board_state(matter, now, payments=(), days_idle=0, owed=None):
                      handed_over + timedelta(days=NEW_MATTER_ACTION_DAYS))
             if served and not hand and not matter.delivery_failed and not litigation:
                 due = _local_date(delivery["due_at"])
-                if delivery["outstanding"]:
-                    task(OWNER_FSA, f"Hand delivery outstanding since {_day(due)} - an inspector must deliver "
-                                    "the LOD and upload the signed proof", due, flag=True)
+                sent = next((i for i in matter.lod_instructions.all() if i.status == "sent"), None)
+                if sent:
+                    # An inspector has it: now the deadline is theirs.
+                    late = sent.due_on < today
+                    task(OWNER_FSA, (f"{sent.inspector_name} has not sent the signed proof - delivery was due "
+                                     f"{_day(sent.due_on)}" if late else
+                                     f"Waiting for {sent.inspector_name} to deliver the LOD (instructed "
+                                     f"{_day(_local_date(sent.sent_at))})"), sent.due_on, flag=late)
+                elif delivery["outstanding"]:
+                    task(OWNER_FSA, f"Hand delivery outstanding since {_day(due)} - send the LOD to an inspector "
+                                    "to deliver", due, flag=True)
                 else:
-                    task(OWNER_FSA, "Have an inspector hand-deliver the LOD and upload the signed proof", due)
+                    task(OWNER_FSA, "Send the LOD to an inspector to hand-deliver", due)
             if stage == NO_TRACE:
                 task(lawyers, "Trace the facility, or recommend closure",
                      _local_date(matter.delivery_failed_at or now) + timedelta(days=NO_TRACE_ACTION_DAYS))

@@ -174,15 +174,16 @@ def send_due_lod_delivery_reminders(now=None):
     return count
 
 
-def notify_lod_delivered(matter, by_user):
+def notify_lod_delivered(matter, by_user=None, by_name=""):
     """Tell FSA and the legal team the Letter of Demand has been hand-delivered
-    and the signed proof is on the matter."""
+    and the signed proof is on the matter. ``by_name`` names who confirmed it
+    when that was not a user - an inspector through their upload link."""
     from .models import DebtorNotice
     name = matter.contact_name or matter.contact_id
-    who = by_user.get_full_name() or by_user.email
+    who = (by_user.get_full_name() or by_user.email) if by_user else by_name
     text = (f"The Letter of Demand to {name} has been delivered by hand. {who} confirmed it "
             f"and uploaded the signed proof of delivery.")
-    people = {u.id: u for u in _fsa_staff() + _legal_team() if u.id != by_user.id}
+    people = {u.id: u for u in _fsa_staff() + _legal_team() if u.id != getattr(by_user, "id", None)}
     notices = _raise_notices(matter, people.values(), DebtorNotice.KIND_LOD_DELIVERED, who, text)
     _email(f"Letter of Demand delivered \u2013 {name}", {
         "paragraphs": [
@@ -292,7 +293,7 @@ def send_legal_diary_reminders(now=None, digest_hour=7):
     today = timezone.localtime(now).date()
     matters = list(LegalMatter.objects.filter(status=LegalMatter.ACTIVE)
                    .select_related("attorney", "follow_up_user")
-                   .prefetch_related("step_states", "payment_plans", "payments"))
+                   .prefetch_related("step_states", "payment_plans", "payments", "lod_instructions"))
     payments = {}
     for tenant in {m.tenant_id for m in matters}:
         payments.update(legal_board.payments_by_contact(
@@ -348,6 +349,7 @@ def send_legal_diary_reminders(now=None, digest_hour=7):
                 format_html("This is your reminder to follow up on <strong>{}</strong>: {}.", name, note),
             ], f"Follow-up due on {name}: {note}")
             sent += 1
+        sent += _lod_instruction_reminders(m, today)
 
     if timezone.localtime(now).hour >= digest_hour:
         sent += _send_diary_digests(states, today)
@@ -382,4 +384,41 @@ def _send_diary_digests(states, today):
             "link_lead": "You can", "link_text": "open the legal diary on the Debtor System",
         }, [user])
         sent += 1
+    return sent
+
+
+def _lod_instruction_reminders(matter, today):
+    """For an inspector's open hand-delivery instruction: a reminder to the
+    inspector a couple of days before the deadline, and once it has passed,
+    another to the inspector plus an alert to whoever sent it and FSA."""
+    from . import lod_dispatch
+    sent = 0
+    name = matter.contact_name or matter.contact_id
+    for ins in matter.lod_instructions.all():
+        if ins.status != "sent":
+            continue
+        soon = ins.due_on - timedelta(days=lod_dispatch.REMIND_DAYS_BEFORE)
+        if soon <= today <= ins.due_on and _remind_once(f"lodins:{ins.id}:soon", matter):
+            try:
+                lod_dispatch.remind_inspector(ins, overdue=False)
+                sent += 1
+            except Exception:  # noqa: BLE001 - a reminder must never stop the run
+                logger.exception("LOD reminder to %s failed", ins.to_email)
+        if ins.due_on < today and _remind_once(f"lodins:{ins.id}:overdue", matter):
+            try:
+                lod_dispatch.remind_inspector(ins, overdue=True)
+            except Exception:  # noqa: BLE001
+                logger.exception("Overdue LOD reminder to %s failed", ins.to_email)
+            people = {u.id: u for u in _fsa_staff()}
+            if ins.sent_by and ins.sent_by.is_active:
+                people[ins.sent_by.id] = ins.sent_by
+            due = ins.due_on
+            _diary_notice(matter, list(people.values()), f"Hand delivery overdue – {name}", [
+                format_html("{} was asked on {} to deliver the Letter of Demand to <strong>{}</strong> by {}, and "
+                            "the signed proof of delivery has not come in. The inspector has been sent a "
+                            "reminder.", ins.inspector_name, _when(ins.sent_at), name, _long_day(due)),
+                "If the delivery could not be made, please record it as unsuccessful on the matter.",
+            ], f"Hand delivery overdue: {ins.inspector_name} was to deliver the LOD to {name} by "
+               f"{_long_day(due)}; no signed proof yet.")
+            sent += 1
     return sent
