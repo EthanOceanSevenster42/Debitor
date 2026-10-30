@@ -155,7 +155,7 @@ current_full_path.
                     {% endif %}
                 {% endif %}
                 {% if write_off_page %}
-                    {% if can_manage %}
+                    {% if can_manage or inv.can_credit_note %}
                     <label class="cn-toggle" onclick="event.stopPropagation();"
                            title="Tick once the matching credit note has been issued in Xero">
                         <input type="checkbox" {% if inv.credit_note_issued %}checked{% endif %}

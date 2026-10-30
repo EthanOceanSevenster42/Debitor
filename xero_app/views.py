@@ -102,6 +102,17 @@ def _can_collect(user):
     return user.is_super_admin or user.is_administrator
 
 
+def _project_codes(raw):
+    """'050 - Raw Meat Products, 060 - Processed Meat Products' -> {'050', '060'}."""
+    return {part.strip()[:3] for part in (raw or "").split(",") if part.strip()}
+
+
+def _can_credit_note(user, project_code):
+    """Mark a written-off invoice's credit note issued: Super Admins, and anyone
+    who processes the write-offs of that invoice's project group."""
+    return _can_manage(user) or bool(_project_codes(project_code) & user.write_off_codes())
+
+
 def _can_write_off(user):
     """Writing off a client's open invoices — open to every assigned role
     (Super Admin, Administrator, Lawyer). A user with no role assigned still
@@ -955,6 +966,7 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
             view_admin = next((a for a in alloc_map.values() if a.id == int(admin_param)), None)
         restrict_ids = {cid for cid, a in alloc_map.items() if a.id in visible}
     my_alloc_ids = restrict_ids or set()
+    write_off_codes = request.user.write_off_codes() if write_off_only else set()
     view_admin_label = (view_admin.get_full_name() or view_admin.email) if view_admin else ""
 
     snapshots = list(
@@ -1083,8 +1095,10 @@ def _aging_context(request, tenant_id, closed_only, write_off_only=False, handov
                     or (cid in handed_over_cids and not was_returned)):
                 continue
 
-        # Allocation-based visibility for non-super-admins.
-        if restrict_to_me and cid not in my_alloc_ids:
+        # Allocation-based visibility for non-super-admins - except, on the
+        # Write-offs page, the write-off groups this person processes for everyone.
+        if restrict_to_me and cid not in my_alloc_ids and not (
+                write_off_only and write_off_codes and _project_codes(s["project_code"]) & write_off_codes):
             continue
         # "Unallocated" filter (super admins): keep only debtors with no admin.
         if unallocated_only and cid in alloc_map:
@@ -1532,7 +1546,9 @@ def xero_credit_note_toggle(request):
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     if not tenant_id:
         return JsonResponse({"error": "Not connected to Xero."}, status=400) if is_ajax else redirect("xero_login")
-    if not _can_manage(request.user):
+    snap = OpenInvoiceSnapshot.objects.filter(
+        tenant_id=tenant_id, invoice_id=(request.POST.get("invoice_id") or "").strip()).first()
+    if not _can_credit_note(request.user, snap.project_code if snap else ""):
         if is_ajax:
             return JsonResponse({"error": "Only a Super Admin can mark a credit note as issued."}, status=403)
         messages.error(request, "Only a Super Admin can mark a credit note as issued.")
@@ -3713,6 +3729,7 @@ def xero_debtor_statement(request):
             "handover_auto": is_auto_handover and not bool(h_row),
             # Write-offs page: whether the matching Xero credit note is issued.
             "credit_note_issued": credit_note_map.get(iid, False),
+            "can_credit_note": _can_credit_note(request.user, s["project_code"]),
         })
 
     # Best mobile (or fallback) phone for the WhatsApp button. Reads only from

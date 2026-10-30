@@ -39,6 +39,16 @@ class UserManager(BaseUserManager):
         return self._create_user(email, password, **extra_fields)
 
 
+# Write-off groups by Xero project code (key, label, codes). Training is project
+# 080; IMI is Red Meat and Poultry; APS is raw and processed meat products and
+# eggs - the same split the Lawyers page uses.
+WRITE_OFF_GROUPS = [
+    ('training', 'Training (project 080)', ('080',)),
+    ('imi', 'IMI - Red Meat and Poultry (projects 010, 020)', ('010', '020')),
+    ('aps', 'APS - Raw and Processed Meat Products, Eggs (projects 050, 060, 070)', ('050', '060', '070')),
+]
+
+
 class User(AbstractUser):
     username = None
     email = models.EmailField('email address', unique=True)
@@ -61,6 +71,14 @@ class User(AbstractUser):
     # Per-user grant: this person may also see and work the debtors allocated to
     # these administrators, as well as their own - e.g. someone who covers a
     # colleague's book. Gives no other rights.
+    # Write-offs this person processes across every book, by Xero project code
+    # group (WRITE_OFF_GROUPS): they see those written-off invoices whoever's
+    # debtor they are, and can mark the credit note issued. Comma-separated keys.
+    write_off_groups = models.CharField(
+        'Can also see and process the write-offs for', max_length=60, blank=True, default='',
+        help_text="Every written-off invoice in these groups shows on this person's Write-offs page, "
+                  "whoever's debtor it is, and they can tick its credit note as issued.",
+    )
     also_manages = models.ManyToManyField(
         'self', symmetrical=False, blank=True, related_name='managed_by',
         verbose_name='Can also manage the debtors of',
@@ -92,6 +110,12 @@ class User(AbstractUser):
     @property
     def is_lawyer(self):
         return self.role == Role.LAWYER
+
+    def write_off_codes(self):
+        """The Xero project codes ("080", "010"...) of the write-off groups this
+        person processes."""
+        keys = {k.strip() for k in (self.write_off_groups or '').split(',') if k.strip()}
+        return {code for key, _label, codes in WRITE_OFF_GROUPS if key in keys for code in codes}
 
     def book_admin_ids(self):
         """The administrators whose debtors this person works: themselves plus

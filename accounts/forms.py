@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, SetPasswordForm
 
-from .models import User, Role
+from .models import User, Role, WRITE_OFF_GROUPS
 
 
 class StyledFormMixin:
@@ -46,9 +46,16 @@ class UserInviteForm(StyledFormMixin, forms.ModelForm):
 
 
 class UserEditForm(StyledFormMixin, forms.ModelForm):
+    write_off_groups = forms.MultipleChoiceField(
+        label=User._meta.get_field('write_off_groups').verbose_name,
+        help_text=User._meta.get_field('write_off_groups').help_text,
+        choices=[(key, label) for key, label, _codes in WRITE_OFF_GROUPS],
+        widget=forms.CheckboxSelectMultiple(), required=False)
+
     class Meta:
         model = User
-        fields = ('first_name', 'last_name', 'email', 'role', 'legal_access', 'also_manages', 'is_active')
+        fields = ('first_name', 'last_name', 'email', 'role', 'legal_access', 'also_manages',
+                  'write_off_groups', 'is_active')
         widgets = {'is_active': forms.CheckboxInput(),
                    'also_manages': forms.CheckboxSelectMultiple()}
 
@@ -66,6 +73,12 @@ class UserEditForm(StyledFormMixin, forms.ModelForm):
             others = others.exclude(pk=self.instance.pk)
         self.fields['also_manages'].queryset = others.order_by('first_name', 'last_name')
         self.fields['also_manages'].widget.attrs['class'] = ''
+        self.fields['write_off_groups'].widget.attrs['class'] = ''
+        if self.instance.pk and not self.is_bound:
+            self.initial['write_off_groups'] = [k for k in self.instance.write_off_groups.split(',') if k]
+
+    def clean_write_off_groups(self):
+        return ','.join(self.cleaned_data.get('write_off_groups') or [])
 
 
 class AdminSetPasswordForm(StyledFormMixin, SetPasswordForm):
